@@ -1,0 +1,4 @@
+kicker.s4lo.lol {
+	encode gzip
+	reverse_proxy kicker:8787
+}
