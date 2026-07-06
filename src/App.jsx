@@ -546,7 +546,7 @@ export default function App() {
               <Btn onClick={() => openHistory("home")} style={{ fontSize: 14, padding: "12px 0" }}>Hand history</Btn>
               <Btn onClick={() => setScreen("stats")} style={{ fontSize: 14, padding: "12px 0" }}>Stats</Btn>
             </div>
-            <a href="https://github.com/DevDash-LM/mobile-poker-main" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/DevDash-LM/kicker-poker" target="_blank" rel="noopener noreferrer"
               style={{ color: C.muted, fontSize: 12, textAlign: "center", textDecoration: "none", opacity: 0.7, padding: "6px 0", fontFamily: FONT }}>
               View source
             </a>
