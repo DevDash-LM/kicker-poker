@@ -7,11 +7,21 @@ export const REACTIONS = ["👍", "😂", "😮", "🔥", "👏"];
 export const AVATARS = ["🙂", "😎", "🤠", "👽", "🐙", "🦄", "🐸", "🤖"];
 
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const CODE_LEN = 5; // 24^5 ~= 7.96M codes: harder to guess/enumerate than 4-char
+
+// Cryptographically secure uniform index in [0, n), rejection-sampled (no modulo bias).
+function secureIndex(n) {
+  const limit = Math.floor(0x100000000 / n) * n;
+  const buf = new Uint32Array(1);
+  let x;
+  do { globalThis.crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+  return x % n;
+}
 
 export function makeCode(taken) {
   let code;
   do {
-    code = Array.from({ length: 4 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join("");
+    code = Array.from({ length: CODE_LEN }, () => ALPHA[secureIndex(ALPHA.length)]).join("");
   } while (taken.has(code));
   return code;
 }

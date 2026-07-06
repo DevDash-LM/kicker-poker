@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { C, FONT, isDark, applyTheme } from "./theme.js";
 import {
   RANK_STR, fmt, potOf, clone, eval7, handLabel, simEquity,
-  AI_SEED, decideAI, startHand, applyAction, stepRunout, runoutEquities,
+  AI_SEED, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
 } from "./game/logic.js";
 import { CardFace, Seat, Btn, ChipDot, TimerBar } from "./components.jsx";
 import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
@@ -263,7 +263,7 @@ export default function App() {
   };
   const joinRoom = () => {
     const code = joinCode.trim().toUpperCase();
-    if (code.length !== 4) { setNetErr("Room codes are 4 letters."); return; }
+    if (code.length !== 5) { setNetErr("Room codes are 5 letters."); return; }
     setNetErr(null); saveProfile(profile);
     sendWhenReady({ type: "join", code, profile });
   };
@@ -289,7 +289,7 @@ export default function App() {
       ...AI_SEED.slice(0, cfg.ai).map(a => ({ ...a, ai: true, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
     ];
     const base = {
-      players, dealer: Math.floor(Math.random() * players.length), handNo: 0, board: [], deck: [], stage: "hand",
+      players, dealer: secureInt(players.length), handNo: 0, board: [], deck: [], stage: "hand",
       blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: cfg.stack,
     };
     setSession({ hands: 0, won: 0, biggest: 0, rebuys: 0 });
@@ -519,7 +519,7 @@ export default function App() {
             </div>
             <h1 className="rise-in" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.04em", color: C.ink, margin: 0 }}>Kicker</h1>
             <p className="rise-in" style={{ color: C.muted, fontSize: 16, lineHeight: 1.5, margin: 0, maxWidth: 300, animationDelay: ".08s" }}>
-              Clean Texas Hold'em vs friends, or AI players. Live win odds on every street. — learn as you play.
+              Clean Texas Hold'em against AI players. Live win odds on every street — learn as you play.
             </p>
           </div>
           <div className="rise-in" style={{ width: wide ? 360 : "auto", flexShrink: 0, paddingBottom: wide ? 0 : "calc(32px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10, animationDelay: ".16s" }}>
@@ -546,7 +546,7 @@ export default function App() {
               <Btn onClick={() => openHistory("home")} style={{ fontSize: 14, padding: "12px 0" }}>Hand history</Btn>
               <Btn onClick={() => setScreen("stats")} style={{ fontSize: 14, padding: "12px 0" }}>Stats</Btn>
             </div>
-            <a href="https://github.com/DevDash-LM/kicker-poker" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/DevDash-LM/mobile-poker-main" target="_blank" rel="noopener noreferrer"
               style={{ color: C.muted, fontSize: 12, textAlign: "center", textDecoration: "none", opacity: 0.7, padding: "6px 0", fontFamily: FONT }}>
               View source
             </a>
@@ -630,10 +630,10 @@ export default function App() {
             <div>
               <SetupLabel>Join a table</SetupLabel>
               <div style={{ display: "flex", gap: 8 }}>
-                <input className="txt" value={joinCode} maxLength={4} placeholder="CODE" autoCapitalize="characters" autoCorrect="off"
+                <input className="txt" value={joinCode} maxLength={5} placeholder="CODE" autoCapitalize="characters" autoCorrect="off"
                   onChange={e => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""))}
                   style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, letterSpacing: ".25em", fontWeight: 800, flex: 1, minWidth: 0 }} />
-                <Btn kind="primary" onClick={joinRoom} disabled={joinCode.length !== 4} style={{ flex: "0 0 100px" }}>Join</Btn>
+                <Btn kind="primary" onClick={joinRoom} disabled={joinCode.length !== 5} style={{ flex: "0 0 100px" }}>Join</Btn>
               </div>
             </div>
             <div>

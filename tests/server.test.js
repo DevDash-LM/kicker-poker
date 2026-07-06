@@ -40,7 +40,7 @@ describe("multiplayer server", () => {
 
     a.send({ type: "create", profile: { name: "Alice", emoji: "😎" }, config: { sb: 50, bb: 100, stack: 10000, fillAI: false } });
     const roomA = await a.next(m => m.type === "room");
-    expect(roomA.code).toMatch(/^[A-Z]{4}$/);
+    expect(roomA.code).toMatch(/^[A-Z]{5}$/);
     expect(roomA.members[0].host).toBe(true);
 
     b.send({ type: "join", code: roomA.code, profile: { name: "Bob", emoji: "🤠" } });

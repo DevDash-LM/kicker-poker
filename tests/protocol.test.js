@@ -46,7 +46,7 @@ describe("redaction & rotation", () => {
 describe("input validation", () => {
   it("room codes are 4 unambiguous letters", () => {
     const code = makeCode(new Map());
-    expect(code).toMatch(/^[A-HJ-NP-Z]{4}$/);
+    expect(code).toMatch(/^[A-HJ-NP-Z]{5}$/);
   });
   it("sanitizes names", () => {
     expect(sanitizeName("")).toBe("Guest");
@@ -63,5 +63,30 @@ describe("input validation", () => {
   it("clamps configs to known presets", () => {
     expect(validConfig({ sb: 1, bb: 7, stack: 123, fillAI: "yes" })).toEqual({ sb: 50, bb: 100, stack: 10000, fillAI: true });
     expect(validConfig({ sb: 250, bb: 500, stack: 50000, fillAI: false })).toEqual({ sb: 250, bb: 500, stack: 50000, fillAI: false });
+  });
+});
+
+describe("room codes (makeCode)", () => {
+  it("produces 5-letter codes from the safe alphabet", () => {
+    for (let i = 0; i < 2000; i++) {
+      const code = makeCode(new Set());
+      expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ]{5}$/);
+    }
+  });
+
+  it("never returns a taken code and stays unique under load", () => {
+    const taken = new Set();
+    for (let i = 0; i < 5000; i++) {
+      const code = makeCode(taken);
+      expect(taken.has(code)).toBe(false);
+      taken.add(code);
+    }
+    expect(taken.size).toBe(5000);
+  });
+
+  it("uses all alphabet letters over many samples (no dead characters / bias)", () => {
+    const seen = new Set();
+    for (let i = 0; i < 20000; i++) makeCode(new Set()).split("").forEach(ch => seen.add(ch));
+    expect(seen.size).toBe(24); // every letter of the 24-char alphabet appears
   });
 });

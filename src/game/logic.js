@@ -1,11 +1,26 @@
 export const RANK_STR = { 2:"2",3:"3",4:"4",5:"5",6:"6",7:"7",8:"8",9:"9",10:"10",11:"J",12:"Q",13:"K",14:"A" };
 export const SB = 50, BB = 100, START = 10000;
 
+// Cryptographically secure uniform integer in [0, maxExclusive).
+// Uses rejection sampling to avoid modulo bias. Works in browsers and Node 18+
+// (globalThis.crypto.getRandomValues is available in both).
+export function secureInt(maxExclusive) {
+  if (maxExclusive <= 0) throw new RangeError("maxExclusive must be > 0");
+  if (maxExclusive === 1) return 0;
+  const limit = Math.floor(0x100000000 / maxExclusive) * maxExclusive; // reject the biased tail
+  const buf = new Uint32Array(1);
+  let x;
+  do { globalThis.crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+  return x % maxExclusive;
+}
+
+// Card order MUST come from a CSPRNG for the game to be certifiable. Only the
+// deck shuffle needs this; AI/equity Monte-Carlo randomness stays on Math.random().
 export function freshDeck() {
   const d = [];
   for (let s = 0; s < 4; s++) for (let r = 2; r <= 14; r++) d.push({ r, s });
   for (let i = d.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = secureInt(i + 1);
     [d[i], d[j]] = [d[j], d[i]];
   }
   return d;

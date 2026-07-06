@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SB, BB, START,
   freshDeck, eval5, eval7, cmpScore, handLabel, simEquity,
-  potOf, startHand, applyAction, decideAI, stepRunout, runoutEquities, AI_SEED,
+  potOf, startHand, applyAction, decideAI, stepRunout, runoutEquities, AI_SEED, secureInt,
 } from "../src/game/logic.js";
 
 const c = (r, s) => ({ r, s });
@@ -295,5 +295,51 @@ describe("all-in runout", () => {
     const live = eq.filter(x => x !== null);
     expect(live.length).toBe(2);
     expect(live[0] + live[1]).toBeCloseTo(1, 6);
+  });
+});
+
+describe("RNG / deck integrity", () => {
+  it("freshDeck returns exactly 52 distinct cards, every rank+suit once", () => {
+    for (let t = 0; t < 200; t++) {
+      const d = freshDeck();
+      expect(d.length).toBe(52);
+      const keys = new Set(d.map(x => x.r * 4 + x.s));
+      expect(keys.size).toBe(52);
+      d.forEach(x => { expect(x.r).toBeGreaterThanOrEqual(2); expect(x.r).toBeLessThanOrEqual(14); expect(x.s).toBeGreaterThanOrEqual(0); expect(x.s).toBeLessThanOrEqual(3); });
+    }
+  });
+
+  it("no card is ever dealt to two places in a hand (hole cards + full board)", () => {
+    for (let t = 0; t < 300; t++) {
+      let g = startHand({
+        players: [mkPlayer("A", 10000, false), mkPlayer("B", 10000), mkPlayer("C", 10000)],
+        dealer: 0, handNo: 0, blinds: { sb: SB, bb: BB }, startStack: START,
+      });
+      // exhaust remaining deck onto board to expose any collision
+      const seen = new Set();
+      const add = card => { const k = card.r * 4 + card.s; expect(seen.has(k)).toBe(false); seen.add(k); };
+      g.players.forEach(p => p.cards.forEach(add));
+      g.deck.forEach(add); // remaining undealt deck must be disjoint from hole cards
+      expect(seen.size).toBe(52);
+    }
+  });
+
+  it("secureInt is in range and approximately uniform (chi-square)", () => {
+    const K = 6, N = 120000, buckets = new Array(K).fill(0);
+    for (let i = 0; i < N; i++) {
+      const v = secureInt(K);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(K);
+      buckets[v]++;
+    }
+    const exp = N / K;
+    const chi = buckets.reduce((a, b) => a + ((b - exp) ** 2) / exp, 0);
+    expect(chi).toBeLessThan(20.5); // df=5, well below even 0.1% critical (~20.5)
+  });
+
+  it("secureInt(1) === 0 and rejects non-positive bounds", () => {
+    expect(secureInt(1)).toBe(0);
+    expect(() => secureInt(0)).toThrow();
+    expect(() => secureInt(-3)).toThrow();
   });
 });

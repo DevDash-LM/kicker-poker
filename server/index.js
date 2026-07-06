@@ -3,7 +3,7 @@ import { readFileSync, existsSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer } from "ws";
-import { startHand, applyAction, decideAI, stepRunout, AI_SEED } from "../src/game/logic.js";
+import { startHand, applyAction, decideAI, stepRunout, AI_SEED, secureInt } from "../src/game/logic.js";
 import {
   PROTO, MAX_SEATS, TURN_MS, RECONNECT_GRACE_MS, NEXT_HAND_MS, REACTIONS,
   makeCode, sanitizeName, sanitizeAvatar, mkPlayer, redactFor, validAction, validConfig,
@@ -215,7 +215,7 @@ export function createServer(port = 8787) {
     room.aiChips = ais.map(p => p.chips);
     room.status = "playing";
     room.game = startHand({
-      players, dealer: Math.floor(Math.random() * players.length), handNo: 0,
+      players, dealer: secureInt(players.length), handNo: 0,
       board: [], deck: [], stage: "hand",
       blinds: { sb: room.config.sb, bb: room.config.bb }, startStack: room.config.stack,
     });
