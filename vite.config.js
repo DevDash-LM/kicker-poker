@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+      includeAssets: ["favicon.svg", "favicon.ico", "favicon-64.png", "apple-touch-icon.png", "robots.txt", "og-image.png"],
       manifest: {
         name: "Kicker — Mobile Poker",
         short_name: "Kicker",
@@ -20,9 +20,12 @@ export default defineConfig({
         display: "standalone",
         orientation: "portrait",
         start_url: "/",
+        id: "/",
+        lang: "en",
+        categories: ["games", "entertainment"],
         icons: [
-          { "src": "pwa-192.png", "sizes": "192x192", "type": "image/png" },
-          { "src": "pwa-512.png", "sizes": "512x512", "type": "image/png" },
+          { "src": "pwa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+          { "src": "pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
           { "src": "pwa-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
         ]
       }

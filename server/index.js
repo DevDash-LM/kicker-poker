@@ -18,6 +18,7 @@ export function createServer(port = 8787) {
     ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
     ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json",
     ".json": "application/json", ".ico": "image/x-icon", ".txt": "text/plain", ".map": "application/json",
+    ".xml": "application/xml; charset=utf-8", ".webp": "image/webp",
   };
   const httpServer = http.createServer((req, res) => {
     if (req.url === "/health") { res.writeHead(200); res.end("ok"); return; }
