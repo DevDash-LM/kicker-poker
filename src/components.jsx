@@ -28,8 +28,16 @@ export function CardBack({ w = 30, h = 42, className = "", style }) {
         position: "absolute", inset: 4, borderRadius: w * 0.12,
         border: "1px solid rgba(255,255,255,.14)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        color: "rgba(255,255,255,.35)", fontSize: w * 0.32,
-      }}>♠</div>
+      }}>
+        <div aria-hidden="true" style={{
+          width: w * 0.52, height: w * 0.52,
+          background: "rgba(255,255,255,.22)",
+          WebkitMaskImage: "url(/logo-mark.png)", maskImage: "url(/logo-mark.png)",
+          WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+          WebkitMaskPosition: "center", maskPosition: "center",
+          WebkitMaskSize: "contain", maskSize: "contain",
+        }} />
+      </div>
     </div>
   );
 }
