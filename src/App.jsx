@@ -177,6 +177,8 @@ export default function App() {
   const pendingRef = useRef(null);
   const screenRef = useRef(screen);
   screenRef.current = screen;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   useEffect(() => {
     const h = () => unlockAudio();
@@ -337,9 +339,27 @@ export default function App() {
   const sbAmt = game?.blinds?.sb ?? settings.sb;
   const bbAmt = game?.blinds?.bb ?? settings.bb;
 
+  // Persist solo progress, but debounced: saveGame serializes the whole game
+  // (deck + players) and writes localStorage synchronously, which otherwise ran
+  // on every state change during fast AI/animation sequences. Coalesce to at
+  // most one write per idle window; flush immediately when the tab is hidden.
   useEffect(() => {
-    if (mode === "solo" && game && (screen === "game" || screen === "history" || screen === "stats")) store.saveGame(game, session);
+    if (!(mode === "solo" && game && (screen === "game" || screen === "history" || screen === "stats"))) return;
+    const id = setTimeout(() => store.saveGame(game, session), 400);
+    return () => clearTimeout(id);
   }, [game, session, screen, mode]);
+
+  useEffect(() => {
+    const save = () => {
+      if (mode === "solo" && gameRef.current && ["game", "history", "stats"].includes(screenRef.current)) {
+        store.saveGame(gameRef.current, sessionRef.current);
+      }
+    };
+    const onVis = () => { if (document.visibilityState === "hidden") save(); };
+    window.addEventListener("pagehide", save);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { window.removeEventListener("pagehide", save); document.removeEventListener("visibilitychange", onVis); };
+  }, [mode]);
 
   useEffect(() => {
     if (!game) return;
@@ -547,7 +567,7 @@ export default function App() {
               <Btn onClick={() => openHistory("home")} style={{ fontSize: 14, padding: "12px 0" }}>Hand history</Btn>
               <Btn onClick={() => setScreen("stats")} style={{ fontSize: 14, padding: "12px 0" }}>Stats</Btn>
             </div>
-            <a href="https://github.com/DevDash-LM/mobile-poker-main" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/DevDash-LM/kicker-poker" target="_blank" rel="noopener noreferrer"
               style={{ color: C.muted, fontSize: 12, textAlign: "center", textDecoration: "none", opacity: 0.7, padding: "6px 0", fontFamily: FONT }}>
               View source
             </a>
