@@ -838,7 +838,7 @@ export default function App() {
     setRaiseTo(v => Math.max(minTo, Math.min(maxTo, v + d * sbAmt)));
     S.tick(); buzz(4);
   };
-  const boardW = wide ? (short ? 56 : 80) : 47;
+  const boardW = wide ? (short ? 62 : 88) : 47;
   const boardH = Math.round(boardW * 66 / 47);
   const heroCardW = wide ? boardW : 62;
   const heroCardH = wide ? boardH : 88;
@@ -1057,13 +1057,13 @@ export default function App() {
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: wide && short ? 8 : 14, padding: "8px 16px", minHeight: 0 }}>
-          <div ref={potRef} key={pot} className="pot-pop" style={{ fontSize: 13, fontWeight: 700, color: C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 20, padding: "6px 16px", fontVariantNumeric: "tabular-nums" }}>
+          <div ref={potRef} key={pot} className="pot-pop" style={{ fontSize: wide ? 15 : 13, fontWeight: 700, color: C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 20, padding: wide ? "7px 19px" : "6px 16px", fontVariantNumeric: "tabular-nums" }}>
             Pot {fmt(potDisp)}
           </div>
           <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center" }}>
             {wide && (
               <div style={{ position: "absolute", left: 24, top: "50%", transform: "translateY(-50%)", zIndex: 40 }}>
-                <div key={`info-${game.handNo}-${game.street}`} className="tile-in" style={{ ...tileStyle, minWidth: 210 }}>
+                <div key={`info-${game.handNo}-${game.street}`} className="tile-in" style={{ ...tileStyle, minWidth: 210, zoom: 1.1 }}>
                   {heroInfo}
                 </div>
               </div>
@@ -1133,7 +1133,7 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div key={`act-${game.handNo}-${game.street}-${game.stage}-${isHeroTurn ? 1 : 0}`} className="tile-in" style={{ ...tileStyle, width: "min(440px, 46vw)" }}>
+            <div key={`act-${game.handNo}-${game.street}-${game.stage}-${isHeroTurn ? 1 : 0}`} className="tile-in" style={{ ...tileStyle, width: "min(440px, 46vw)", zoom: 1.1 }}>
               {actionContent}
             </div>
           </div>
