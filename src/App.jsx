@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { C, FONT, isDark, applyTheme } from "./theme.js";
 import {
   RANK_STR, fmt, potOf, clone, eval7, handLabel, simEquity,
-  AI_SEED, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
+  AI_SEED, pickNames, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
 } from "./game/logic.js";
 import { CardFace, Seat, Btn, ChipDot, TimerBar } from "./components.jsx";
 import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
@@ -284,9 +284,10 @@ export default function App() {
   const doAction = (g, idx, a) => { recordAction(g, idx, a); return applyAction(g, idx, a); };
 
   const newTable = (cfg) => {
+    const botNames = pickNames(cfg.ai);
     const players = [
       { name: "You", emoji: "🙂", ai: false, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
-      ...AI_SEED.slice(0, cfg.ai).map(a => ({ ...a, ai: true, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
+      ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
     ];
     const base = {
       players, dealer: secureInt(players.length), handNo: 0, board: [], deck: [], stage: "hand",
@@ -863,14 +864,14 @@ export default function App() {
         {game.dealer === 0 && <span style={{ marginLeft: 6, background: C.ink, color: C.onPrim, borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 800 }}>D</span>}
       </div>
       {game.stage === "runout" && runPcts && runPcts[0] != null && (
-        <div key={Math.round(runPcts[0] * 100)} className="bet-pop" style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: runPcts[0] >= 0.5 ? C.green : runPcts[0] === 0 ? C.red : C.ink, fontVariantNumeric: "tabular-nums" }}>
-        {Math.round(runPcts[0] * 100)}<span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: runPcts[0] >= 0.5 ? C.green : runPcts[0] === 0 ? C.red : C.ink, fontVariantNumeric: "tabular-nums" }}>
+          <span key={Math.round(runPcts[0] * 100)} className="bet-pop" style={{ display: "inline-block" }}>{Math.round(runPcts[0] * 100)}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
         </div>
       )}
       {!hero.folded && equity !== null && game.stage === "hand" && settings.showEquity && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: infoAlign, gap: 4 }}>
           <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: equity > 0.5 ? C.green : C.ink, fontVariantNumeric: "tabular-nums", transition: "color .3s" }}>
-            {eqDisp}<span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
+            <span key={eqDisp} className="bet-pop" style={{ display: "inline-block" }}>{eqDisp}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
           </div>
           <div style={{ width: 110, height: 5, borderRadius: 3, background: C.line, overflow: "hidden" }}>
             <div className="eq-bar-fill" style={{ width: `${equity * 100}%`, height: "100%", background: equity > 0.5 ? C.green : C.accent }} />
@@ -1063,7 +1064,7 @@ export default function App() {
           <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center" }}>
             {wide && (
               <div style={{ position: "absolute", left: 24, top: "50%", transform: "translateY(-50%)", zIndex: 40 }}>
-                <div key={`info-${game.handNo}-${game.street}`} className="tile-in" style={{ ...tileStyle, minWidth: 210, zoom: 1.1 }}>
+                <div className="tile-in" style={{ ...tileStyle, minWidth: 210, zoom: 1.1 }}>
                   {heroInfo}
                 </div>
               </div>

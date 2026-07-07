@@ -135,6 +135,23 @@ export const AI_SEED = [
   { name: "Zip", emoji: "🐇", aggr: 0.85, loose: 0.7 },
 ];
 
+export const NAME_POOL = [
+  "Marcus", "Elena", "Nolan", "Sofia", "Adrian", "Maya", "Ethan", "Clara",
+  "Naomi", "Julian", "Amelia", "Owen", "Isla", "Caleb", "Vivian", "Levi",
+  "Serena", "Mason", "Tessa", "Dominic", "Audrey", "Miles", "Harper", "Jonah",
+  "Elise", "Theo", "Natalie", "Simon", "Ava",
+];
+
+// Pick n distinct random names from NAME_POOL (secure shuffle, partial).
+export function pickNames(n) {
+  const pool = NAME_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = secureInt(i + 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, n);
+}
+
 export function decideAI(s, idx) {
   const bbA = s.blinds ? s.blinds.bb : BB, sbA = s.blinds ? s.blinds.sb : SB;
   const p = s.players[idx];
