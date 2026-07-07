@@ -118,7 +118,11 @@ export function Seat({ p, isTurn, isDealer, folded, dealKey, seatIdx, innerRef, 
       <div style={{ fontSize: nameFs, fontWeight: 700, color: dimmed ? C.faint : C.ink }}>{p.name}{dimmed ? " ⚡" : ""}</div>
       <div style={{ fontSize: chipFs, color: C.muted, fontVariantNumeric: "tabular-nums", marginTop: -3 }}>{fmt(p.chips)}</div>
       <div style={{ height: big ? 24 : 18 }}>
-        {pct != null ? (
+        {p.sitOut ? (
+          <div style={{ fontSize: badgeFs, fontWeight: 800, color: C.faint, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 9, padding: "1px 8px", letterSpacing: ".04em" }}>
+            OUT
+          </div>
+        ) : pct != null ? (
           <div style={{ fontSize: badgeFs, fontWeight: 800, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums", color: pct >= 0.5 ? "#fff" : pct === 0 ? C.faint : C.ink, background: pct >= 0.5 ? C.green : C.surface, border: `1px solid ${pct >= 0.5 ? C.green : C.line}`, transition: "color .3s ease, background .3s ease, border-color .3s ease" }}>
             {pctDisp}%
           </div>

@@ -3,6 +3,7 @@ import { C, FONT, isDark, applyTheme } from "./theme.js";
 import {
   RANK_STR, fmt, potOf, clone, eval7, handLabel, simEquity,
   AI_SEED, pickNames, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
+  aliveCount, tourneyOver,
 } from "./game/logic.js";
 import { CardFace, Seat, Btn, ChipDot, TimerBar, useCountUp } from "./components.jsx";
 import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
@@ -242,7 +243,7 @@ export default function App() {
   };
   const createRoom = () => {
     setNetErr(null); saveProfile(profile);
-    sendWhenReady({ type: "create", profile, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false } });
+    sendWhenReady({ type: "create", profile, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false, tournament: !!settings.tournament } });
   };
   const joinRoom = () => {
     const code = joinCode.trim().toUpperCase();
@@ -274,7 +275,7 @@ export default function App() {
     ];
     const base = {
       players, dealer: secureInt(players.length), handNo: 0, board: [], deck: [], stage: "hand",
-      blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: cfg.stack,
+      blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: cfg.stack, tournament: !!cfg.tournament,
     };
     setSession({ hands: 0, won: 0, biggest: 0, rebuys: 0 });
     setGame(startHand(base));
@@ -478,7 +479,7 @@ export default function App() {
   useEffect(() => {
     if (game?.stage !== "over" || !skipRef.current || mode !== "solo") return;
     skipRef.current = false;
-    const t = setTimeout(() => setGame(g => (g && g.stage === "over" && g.players[0].chips > 0 ? startHand(g) : g)), 650);
+    const t = setTimeout(() => setGame(g => (g && g.stage === "over" && g.players[0].chips > 0 && !tourneyOver(g) ? startHand(g) : g)), 650);
     return () => clearTimeout(t);
   }, [game?.stage]);
 
@@ -561,7 +562,7 @@ export default function App() {
             ) : (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
-                  <span style={{ color: C.muted, fontSize: 14 }}>Cash game · {settings.ai + 1}-handed</span>
+                  <span style={{ color: C.muted, fontSize: 14 }}>{settings.tournament ? "Tournament" : "Cash game"} · {settings.ai + 1}-handed</span>
                   <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>Blinds {settings.sb}/{settings.bb}</span>
                 </div>
                 <Btn kind="primary" onClick={() => setScreen("setup")} style={{ padding: "17px 0", fontSize: 16 }}>Take a seat</Btn>
@@ -593,6 +594,17 @@ export default function App() {
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Table setup</div>
           </div>
           <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
+            <div>
+              <SetupLabel>Format</SetupLabel>
+              <OptionRow options={[false, true]} value={!!cfg.tournament}
+                onChange={tournament => upd({ tournament })}
+                render={v => (v ? "Tournament" : "Cash game")} />
+              <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>
+                {cfg.tournament
+                  ? "One buy-in. Busted players are out — last one standing wins."
+                  : "Short stacks auto-rebuy so the table stays full."}
+              </div>
+            </div>
             <div>
               <SetupLabel>Blinds</SetupLabel>
               <OptionRow options={BLIND_PRESETS} value={[cfg.sb, cfg.bb]}
@@ -733,6 +745,11 @@ export default function App() {
             {isHost ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div>
+                  <SetupLabel>Format</SetupLabel>
+                  <OptionRow options={[false, true]} value={!!room.config.tournament}
+                    onChange={tournament => sendCfg({ tournament })} render={v => (v ? "Tournament" : "Cash game")} />
+                </div>
+                <div>
                   <SetupLabel>Blinds</SetupLabel>
                   <OptionRow options={BLIND_PRESETS} value={[room.config.sb, room.config.bb]}
                     onChange={([sb, bb]) => sendCfg({ sb, bb })} render={([a, b]) => `${a}/${b}`} />
@@ -750,7 +767,7 @@ export default function App() {
               </div>
             ) : (
               <div style={{ fontSize: 13, color: C.muted, textAlign: "center" }}>
-                Blinds {room.config.sb}/{room.config.bb} · Stack {fmt(room.config.stack)} · {room.config.fillAI ? "AI fill on" : "humans only"}
+                {room.config.tournament ? "Tournament" : "Cash game"} · Blinds {room.config.sb}/{room.config.bb} · Stack {fmt(room.config.stack)} · {room.config.fillAI ? "AI fill on" : "humans only"}
               </div>
             )}
             {netErr && <div style={{ gridColumn: "1 / -1", color: C.red, fontSize: 13, fontWeight: 600, textAlign: "center" }}>{netErr}</div>}
@@ -858,6 +875,8 @@ export default function App() {
   const maxTo = hero.bet + hero.chips;
   const minTo = Math.min(game.currentBet + game.minRaise, maxTo);
   const heroBusted = game.stage === "over" && hero.chips === 0;
+  const isTournament = !!game.tournament;
+  const heroChampion = isTournament && game.stage === "over" && aliveCount(game) === 1 && hero.chips > 0;
   const buyIn = (game.startStack || 10000) * (1 + session.rebuys);
   const sessionNet = hero.chips + hero.total - buyIn;
   const stepRaise = d => {
@@ -928,8 +947,24 @@ export default function App() {
       )}
       {game.stage === "over" ? (
         mode === "mp" ? (
-          <div style={{ textAlign: "center", color: C.muted, fontSize: 14, fontWeight: 600, padding: "14px 0" }}>
-            Next hand is on the way…
+          game.champion ? (
+            <div style={{ textAlign: "center", color: C.ink, fontSize: 15, fontWeight: 800, padding: "12px 0" }}>
+              🏆 {game.champion} wins the tournament
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", color: C.muted, fontSize: 14, fontWeight: 600, padding: "14px 0" }}>
+              Next hand is on the way…
+            </div>
+          )
+        ) : isTournament && (heroChampion || heroBusted) ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ textAlign: "center", fontSize: 15, fontWeight: 800, color: heroChampion ? C.green : C.ink }}>
+              {heroChampion ? "🏆 You win the tournament!" : "You busted out — you're eliminated"}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => setLeaveOpen(true)}>Leave</Btn>
+              <Btn kind="primary" onClick={() => setScreen("setup")}>New tournament</Btn>
+            </div>
           </div>
         ) : heroBusted ? (
           <div style={{ display: "flex" }}>

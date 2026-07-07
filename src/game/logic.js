@@ -248,15 +248,27 @@ export function decideAI(s, idx) {
   return { type: "call" };
 }
 
+// A player is "alive" in a game while they still have chips. In tournaments,
+// busted players (0 chips) are eliminated and sit out for the rest of the game.
+export const aliveCount = g => g.players.filter(p => p.chips > 0).length;
+export const tourneyOver = g => !!g.tournament && aliveCount(g) <= 1;
+
 export function startHand(prev) {
   const blinds = prev.blinds || { sb: SB, bb: BB };
   const startStack = prev.startStack || START;
-  const players = prev.players.map(p => ({
-    ...p,
-    cards: [], bet: 0, total: 0, folded: false, allIn: false,
-    acted: false, revealed: false, lastAction: null,
-    chips: p.ai && p.chips < blinds.bb * 20 ? startStack : p.chips,
-  }));
+  const tournament = !!prev.tournament;
+  const players = prev.players.map(p => {
+    // Cash games auto-top-up short AI stacks so the table stays full.
+    // Tournaments never rebuy -- a busted stack means that seat sits out.
+    const chips = !tournament && p.ai && p.chips < blinds.bb * 20 ? startStack : p.chips;
+    return {
+      ...p,
+      cards: [], bet: 0, total: 0, folded: false, allIn: false,
+      acted: false, revealed: false, lastAction: null,
+      chips,
+      sitOut: tournament && chips <= 0,
+    };
+  });
   const deck = freshDeck();
   const dealer = nextSeat(players, prev.dealer, p => p.chips > 0);
   players.forEach(p => { if (p.chips > 0) p.cards = [deck.pop(), deck.pop()]; else p.folded = true; });

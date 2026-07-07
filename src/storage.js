@@ -2,7 +2,7 @@ const get = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON
 const set = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const del = k => { try { localStorage.removeItem(k); } catch {} };
 
-export const DEFAULT_SETTINGS = { sb: 50, bb: 100, stack: 10000, ai: 4, showEquity: true };
+export const DEFAULT_SETTINGS = { sb: 50, bb: 100, stack: 10000, ai: 4, showEquity: true, tournament: false };
 export const loadSettings = () => ({ ...DEFAULT_SETTINGS, ...get("kicker-settings", {}) });
 export const saveSettings = s => set("kicker-settings", s);
 
