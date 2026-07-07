@@ -864,6 +864,7 @@ export default function App() {
         {hero.folded ? "Folded" : heroHandText}
         {game.dealer === 0 && <span style={{ marginLeft: 6, background: C.ink, color: C.onPrim, borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 800 }}>D</span>}
       </div>
+      <div style={{ minHeight: 33 }}>
       {game.stage === "runout" && runPcts && runPcts[0] != null && (
         <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: runPcts[0] >= 0.5 ? C.green : runPcts[0] === 0 ? C.red : C.ink, fontVariantNumeric: "tabular-nums", transition: "color .3s ease" }}>
           <span style={{ display: "inline-block" }}>{runPctDisp}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
@@ -879,6 +880,7 @@ export default function App() {
           </div>
         </div>
       )}
+      </div>
       <div style={{ fontSize: 13, color: C.ink, fontWeight: 700, marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
         {fmt(hero.chips)} <span style={{ color: C.muted, fontWeight: 600 }}>chips</span>
         {hero.bet > 0 && <span style={{ color: C.accent }}> · {fmt(hero.bet)} in</span>}
@@ -1058,7 +1060,7 @@ export default function App() {
           ))}
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: wide && short ? 8 : 14, padding: "8px 16px", minHeight: 0 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: wide && short ? 8 : 14, padding: "8px 16px", minHeight: 0, position: "relative" }}>
           <div ref={potRef} key={pot} className="pot-pop" style={{ fontSize: wide ? 15 : 13, fontWeight: 700, color: C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 20, padding: wide ? "7px 19px" : "6px 16px", fontVariantNumeric: "tabular-nums" }}>
             Pot {fmt(potDisp)}
           </div>
@@ -1080,7 +1082,8 @@ export default function App() {
             </div>
           </div>
           {game.stage === "over" && game.result && (
-            <div className="banner-up" style={{ background: C.bannerBg, color: "#fff", borderRadius: 16, padding: "12px 20px", textAlign: "center", boxShadow: "0 8px 24px rgba(20,24,33,.25)", zIndex: 55 }}>
+            <div style={{ position: "absolute", left: 0, right: 0, top: `calc(50% + ${Math.round(boardH / 2) + 18}px)`, display: "flex", justifyContent: "center", pointerEvents: "none", zIndex: 55 }}>
+            <div className="banner-up" style={{ background: C.bannerBg, color: "#fff", borderRadius: 16, padding: "12px 20px", textAlign: "center", boxShadow: "0 8px 24px rgba(20,24,33,.25)" }}>
               {game.result.lines.map((l, i) => (
                 <div key={i} style={{ fontSize: 14, fontWeight: 600 }}>
                   <span style={{ color: l.hero ? "#7EF0B0" : "#fff" }}>{l.name}</span>
@@ -1096,6 +1099,7 @@ export default function App() {
                   )}
                 </div>
               ))}
+            </div>
             </div>
           )}
         </div>
@@ -1114,7 +1118,9 @@ export default function App() {
               {heroInfo}
             </div>
             <div style={{ padding: "10px 16px", paddingBottom: "calc(26px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.line}`, background: C.surface2 }}>
-              {actionContent}
+              <div style={{ minHeight: 52, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                {actionContent}
+              </div>
             </div>
           </>
         ) : (
@@ -1129,14 +1135,18 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {heroPct && (
-                <div style={{ marginTop: 10, fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)", transition: "color .3s ease" }}>
-                  {heroPct.val}<span style={{ color: C.muted, fontWeight: 700 }}>% win</span>
-                </div>
-              )}
+              <div style={{ height: 24, marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {heroPct && (
+                  <div style={{ fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)", transition: "color .3s ease" }}>
+                    {heroPct.val}<span style={{ color: C.muted, fontWeight: 700 }}>% win</span>
+                  </div>
+                )}
+              </div>
             </div>
-            <div key={`act-${game.handNo}-${game.street}-${game.stage}-${isHeroTurn ? 1 : 0}`} className="tile-in" style={{ ...tileStyle, width: "min(440px, 46vw)", zoom: 1.1 }}>
-              {actionContent}
+            <div style={{ ...tileStyle, width: "min(440px, 46vw)", zoom: 1.1 }}>
+              <div style={{ minHeight: 56, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                {actionContent}
+              </div>
             </div>
           </div>
         )}
