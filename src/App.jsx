@@ -137,6 +137,8 @@ export default function App() {
   const [deadlineMs, setDeadlineMs] = useState(null);
   const [connList, setConnList] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [foldDragY, setFoldDragY] = useState(0);
+  const foldGestureRef = useRef({ startY: 0, dragging: false, dy: 0 });
   const wide = useMedia("(min-width: 700px)");
   const short = useMedia("(max-height: 500px)");
 
@@ -484,6 +486,28 @@ export default function App() {
     setRaiseOpen(false);
     if (mode === "mp") { netRef.current?.send({ type: "act", action: a }); return; }
     setGame(g => doAction(g, 0, a));
+  };
+  const FOLD_THRESHOLD = 72;
+  const onFoldDown = e => {
+    if (!isHeroTurn || hero?.folded) return;
+    foldGestureRef.current = { startY: e.clientY, dragging: true, dy: 0 };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const onFoldMove = e => {
+    const g = foldGestureRef.current;
+    if (!g.dragging) return;
+    const dy = Math.min(0, e.clientY - g.startY);
+    g.dy = dy;
+    setFoldDragY(dy);
+  };
+  const onFoldUp = () => {
+    const g = foldGestureRef.current;
+    if (!g.dragging) return;
+    const dy = g.dy;
+    foldGestureRef.current = { startY: 0, dragging: false, dy: 0 };
+    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded) { buzz(22); act({ type: "fold" }); }
+    else if (dy < -8) { S.tap(); }
+    setFoldDragY(0);
   };
   const openRaise = () => {
     const minTo = Math.min(game.currentBet + game.minRaise, hero.bet + hero.chips);
@@ -842,9 +866,9 @@ export default function App() {
   };
   const boardW = wide ? (short ? 62 : 88) : 47;
   const boardH = Math.round(boardW * 66 / 47);
-  const heroCardW = wide ? boardW : 62;
-  const heroCardH = wide ? boardH : 88;
-  const heroCardFs = wide ? Math.round(boardW * 18 / 47) : 25;
+  const heroCardW = wide ? boardW : 80;
+  const heroCardH = wide ? boardH : 112;
+  const heroCardFs = wide ? Math.round(boardW * 18 / 47) : 32;
   const infoAlign = wide ? "flex-start" : "flex-end";
   const tileStyle = {
     background: C.surface, border: `1px solid ${C.line}`, borderRadius: 20,
@@ -1066,7 +1090,7 @@ export default function App() {
             Pot {fmt(potDisp)}
           </div>
           <div style={{ position: "relative", width: "100%", display: "flex", justifyContent: "center" }}>
-            {wide && (
+            {wide && settings.showEquity && (
               <div style={{ position: "absolute", left: 24, top: "50%", transform: "translateY(-50%)", zIndex: 40 }}>
                 <div className="tile-in" style={{ ...tileStyle, minWidth: 210, zoom: 1.1 }}>
                   {heroInfo}
@@ -1108,8 +1132,22 @@ export default function App() {
         {!wide ? (
           <>
             <div style={{ padding: "0 16px 8px", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-              <div ref={el => (seatEls.current[0] = el)}>
-                <div style={{ display: "flex", gap: 8, opacity: hero.folded ? 0.35 : 1, transition: "opacity .35s" }}>
+              <div ref={el => (seatEls.current[0] = el)} style={{ position: "relative" }}>
+                {isHeroTurn && !hero.folded && (
+                  <div style={{ position: "absolute", left: 0, right: 0, top: -20, textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: "-0.01em", color: foldDragY <= -FOLD_THRESHOLD ? C.red : C.muted, opacity: foldDragY < -6 ? 1 : 0, transition: "opacity .2s, color .2s", pointerEvents: "none", whiteSpace: "nowrap" }}>
+                    {foldDragY <= -FOLD_THRESHOLD ? "Release to fold" : "Swipe up to fold"}
+                  </div>
+                )}
+                <div
+                  onPointerDown={onFoldDown} onPointerMove={onFoldMove} onPointerUp={onFoldUp} onPointerCancel={onFoldUp}
+                  style={{
+                    display: "flex", gap: 8,
+                    opacity: hero.folded ? 0.35 : 1 - Math.min(0.5, (-foldDragY) / 220),
+                    transform: `translateY(${foldDragY}px)`,
+                    transition: foldGestureRef.current.dragging ? "opacity .1s" : "transform .3s cubic-bezier(.2,.8,.3,1), opacity .35s",
+                    touchAction: isHeroTurn && !hero.folded ? "none" : "auto",
+                    cursor: isHeroTurn && !hero.folded ? "grab" : "default",
+                  }}>
                   {hero.cards.map((c, i) => (
                     <CardFace key={`${game.handNo}-${i}`} card={c} w={heroCardW} h={heroCardH} fs={heroCardFs}
                       className="deal-in" style={{ animationDelay: `${(i * 5 + 4) * 55}ms` }} />
@@ -1137,11 +1175,15 @@ export default function App() {
                 ))}
               </div>
               <div style={{ height: 24, marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {heroPct && (
+                {heroPct ? (
                   <div style={{ fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)", transition: "color .3s ease" }}>
                     {heroPct.val}<span style={{ color: C.muted, fontWeight: 700 }}>% win</span>
                   </div>
-                )}
+                ) : (!settings.showEquity && !hero.folded && heroHandText) ? (
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", boxShadow: "0 4px 12px rgba(20,24,33,.12)" }}>
+                    {heroHandText}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div style={{ ...tileStyle, width: "min(440px, 46vw)", zoom: 1.1 }}>
