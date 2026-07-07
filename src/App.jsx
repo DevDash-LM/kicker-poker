@@ -888,6 +888,7 @@ export default function App() {
     </div>
   );
 
+  const actKey = `${game.handNo}-${game.street}-${game.stage}-${isHeroTurn ? 1 : 0}-${raiseOpen ? 1 : 0}`;
   const actionContent = (
     <>
       {mode === "mp" && isHeroTurn && deadlineMs ? (
@@ -1118,7 +1119,7 @@ export default function App() {
               {heroInfo}
             </div>
             <div style={{ padding: "10px 16px", paddingBottom: "calc(26px + env(safe-area-inset-bottom))", borderTop: `1px solid ${C.line}`, background: C.surface2 }}>
-              <div style={{ minHeight: 52, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <div key={actKey} className="action-pop" style={{ minHeight: 52, display: "flex", flexDirection: "column", justifyContent: "center" }}>
                 {actionContent}
               </div>
             </div>
@@ -1144,7 +1145,7 @@ export default function App() {
               </div>
             </div>
             <div style={{ ...tileStyle, width: "min(440px, 46vw)", zoom: 1.1 }}>
-              <div style={{ minHeight: 56, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <div key={actKey} className="action-pop" style={{ minHeight: 56, display: "flex", flexDirection: "column", justifyContent: "center" }}>
                 {actionContent}
               </div>
             </div>

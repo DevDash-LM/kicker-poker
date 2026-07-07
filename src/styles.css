@@ -3,8 +3,8 @@ html, body { margin: 0; padding: 0; background: var(--app-bg, #EDEFF2); overscro
 body { --track: #E1E4E9; --thumb-border: #fff; transition: background .25s ease; }
 body.dark { --app-bg: #12151B; --track: #2A303B; --thumb-border: #1C2129; }
 body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-button:active:not(:disabled) { transform: scale(.96); }
-.btn { transition: transform .12s ease, box-shadow .18s ease, filter .12s ease; }
+button:active:not(:disabled) { transform: scale(.93); }
+.btn { transition: transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .18s ease, filter .12s ease; }
 @keyframes dealIn {
   from { transform: translateY(-46px) rotate(-8deg) scale(.6); opacity: 0; }
   60%  { opacity: 1; }
@@ -22,6 +22,12 @@ button:active:not(:disabled) { transform: scale(.96); }
   100% { transform: scale(1); opacity: 1; }
 }
 .bet-pop { animation: betPop .24s ease-out both; }
+@keyframes actionPop {
+  0%   { transform: scale(.94); opacity: .35; }
+  60%  { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.action-pop { animation: actionPop .26s cubic-bezier(.2,.8,.3,1.15) both; transform-origin: center; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .fade-in { animation: fadeIn .25s ease both; }
@@ -75,7 +81,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .deal-in, .flip-in, .bet-pop, .banner-up, .float-card, .turn-pulse, .confetti-piece, .rise-in { animation: none !important; }
+  .deal-in, .flip-in, .bet-pop, .banner-up, .float-card, .turn-pulse, .confetti-piece, .rise-in, .action-pop { animation: none !important; }
 }
 
 .vh { min-height: 100vh; min-height: 100dvh; }
@@ -103,7 +109,7 @@ input.txt:focus { border-color: #2E5BFF !important; }
 
 @media (hover: hover) {
   .btn:hover:not(:disabled) { transform: translateY(-1.5px); filter: brightness(1.05); box-shadow: 0 4px 12px rgba(20,24,33,.18); }
-  .btn:active:not(:disabled) { transform: scale(.96); box-shadow: none; }
+  .btn:active:not(:disabled) { transform: scale(.93); box-shadow: none; }
 }
 .brand-mark { opacity: .92; }
 body.dark .brand-mark { filter: invert(1); opacity: .95; }
