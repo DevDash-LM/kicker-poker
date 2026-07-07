@@ -29,10 +29,11 @@ Source-available: you're welcome to read and study the code, but it may not be r
 
 # ❗ RNG & Card-Dealing Audit — Kicker ❗
 
-**Date:** 2026-07-06
-**Scope:** Deck generation, shuffling, dealing, card visibility, all game-affecting randomness, and RNG suitability for regulated play.
-**Files reviewed:** `src/game/logic.js`, `server/index.js`, `server/protocol.js`, `src/App.jsx`, `src/net.js`, `tests/`.
-**Test result:** 43/43 passing.
+**Date:** 2026-07-06          
+
+**Scope:** Deck generation, shuffling, dealing, card visibility, all game-affecting randomness, and RNG suitability for regulated play.                          
+
+**Files reviewed:** `src/game/logic.js`, `server/index.js`, `server/protocol.js`, `src/App.jsx`, `src/net.js`, `tests/`.          
 
 ---
 
