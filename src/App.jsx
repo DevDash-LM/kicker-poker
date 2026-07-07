@@ -841,7 +841,7 @@ export default function App() {
   const heroCardW = wide ? (short ? 46 : 74) : 62;
   const heroCardH = Math.round(heroCardW * 88 / 62);
   const heroCardFs = Math.round(heroCardW * 25 / 62);
-  const boardW = wide ? (short ? 50 : 70) : 47;
+  const boardW = wide ? (short ? 60 : 90) : 47;
   const boardH = Math.round(boardW * 66 / 47);
   const infoAlign = wide ? "flex-start" : "flex-end";
   const tileStyle = {
@@ -1043,12 +1043,12 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-around", padding: wide ? "4px 24px 0" : "4px 8px 0", width: "100%", maxWidth: wide ? 860 : "none", margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-around", padding: wide ? "4px 5% 0" : "4px 8px 0", width: "100%", maxWidth: "none", margin: "0 auto" }}>
           {game.players.slice(1).map((p, i) => (
             <Seat key={p.name} p={p} folded={p.folded}
               isTurn={game.stage === "hand" && game.turn === i + 1}
               isDealer={game.dealer === i + 1}
-              dealKey={game.handNo} seatIdx={i}
+              dealKey={game.handNo} seatIdx={i} big={wide}
               pct={runPcts ? runPcts[i + 1] : null}
               deadline={deadlineMs}
               dimmed={mode === "mp" && connList.some(cn => cn.name === p.name && !cn.connected)}
@@ -1068,6 +1068,24 @@ export default function App() {
                 : <div key={i} style={{ width: boardW, height: boardH, borderRadius: 8, border: `1.5px dashed ${C.faint}`, opacity: 0.5 }} />
             )}
           </div>
+          {wide && (
+            <div ref={el => (seatEls.current[0] = el)} style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: 6 }}>
+              <div style={{ display: "flex", opacity: hero.folded ? 0.35 : 1, transition: "opacity .35s" }}>
+                {hero.cards.map((c, i) => (
+                  <div key={`${game.handNo}-${i}`} className="deal-in" style={{ animationDelay: `${(i * 5 + 4) * 55}ms`, marginLeft: i ? -18 : 0, zIndex: i }}>
+                    <div style={{ transform: `rotate(${i ? 6 : -6}deg) translateY(${i ? 3 : 0}px)` }}>
+                      <CardFace card={c} w={heroCardW} h={heroCardH} fs={heroCardFs} style={{ boxShadow: "0 4px 14px rgba(20,24,33,.22)" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {heroPct && (
+                <div key={heroPct.val} className="bet-pop" style={{ marginTop: 10, fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)" }}>
+                  {heroPct.val}<span style={{ color: C.muted, fontWeight: 700 }}>% win</span>
+                </div>
+              )}
+            </div>
+          )}
           {game.stage === "over" && game.result && (
             <div className="banner-up" style={{ background: C.bannerBg, color: "#fff", borderRadius: 16, padding: "12px 20px", textAlign: "center", boxShadow: "0 8px 24px rgba(20,24,33,.25)", zIndex: 55 }}>
               {game.result.lines.map((l, i) => (
@@ -1107,34 +1125,18 @@ export default function App() {
             </div>
           </>
         ) : (
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 20, padding: "0 24px", paddingBottom: short ? "calc(24px + env(safe-area-inset-bottom))" : "calc(12vh + env(safe-area-inset-bottom))" }}>
-            <div style={{ flex: 1, display: "flex", justifyContent: "flex-start" }}>
+          <>
+            <div style={{ position: "absolute", left: 24, top: "46%", transform: "translateY(-50%)", zIndex: 40 }}>
               <div key={`info-${game.handNo}-${game.street}`} className="tile-in" style={{ ...tileStyle, minWidth: 210 }}>
                 {heroInfo}
               </div>
             </div>
-            <div ref={el => (seatEls.current[0] = el)} style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <div style={{ display: "flex", opacity: hero.folded ? 0.35 : 1, transition: "opacity .35s" }}>
-                {hero.cards.map((c, i) => (
-                  <div key={`${game.handNo}-${i}`} className="deal-in" style={{ animationDelay: `${(i * 5 + 4) * 55}ms`, marginLeft: i ? -18 : 0, zIndex: i }}>
-                    <div style={{ transform: `rotate(${i ? 6 : -6}deg) translateY(${i ? 3 : 0}px)` }}>
-                      <CardFace card={c} w={heroCardW} h={heroCardH} fs={heroCardFs} style={{ boxShadow: "0 4px 14px rgba(20,24,33,.22)" }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {heroPct && (
-                <div key={heroPct.val} className="bet-pop" style={{ marginTop: 10, fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)" }}>
-                  {heroPct.val}<span style={{ color: C.muted, fontWeight: 700 }}>% win</span>
-                </div>
-              )}
-            </div>
-            <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-              <div key={`act-${game.handNo}-${game.street}-${game.stage}-${isHeroTurn ? 1 : 0}`} className="tile-in" style={{ ...tileStyle, width: "min(440px, 40vw)" }}>
+            <div style={{ display: "flex", justifyContent: "center", padding: "0 24px", paddingBottom: short ? "calc(20px + env(safe-area-inset-bottom))" : "calc(6vh + env(safe-area-inset-bottom))" }}>
+              <div key={`act-${game.handNo}-${game.street}-${game.stage}-${isHeroTurn ? 1 : 0}`} className="tile-in" style={{ ...tileStyle, width: "min(440px, 46vw)" }}>
                 {actionContent}
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>

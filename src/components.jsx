@@ -61,45 +61,48 @@ export function TimerBar({ deadline, total = 30000, width = 110 }) {
   );
 }
 
-export function Seat({ p, isTurn, isDealer, folded, dealKey, seatIdx, innerRef, deadline, dimmed, pct }) {
+export function Seat({ p, isTurn, isDealer, folded, dealKey, seatIdx, innerRef, deadline, dimmed, pct, big }) {
+  const cw = big ? 44 : 30, ch = big ? 62 : 42, cfs = big ? 17 : 12;
+  const av = big ? 58 : 44, avFs = big ? 27 : 21;
+  const nameFs = big ? 13 : 11, chipFs = big ? 13 : 11, badgeFs = big ? 12 : 10;
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "min(78px, 23vw)", opacity: folded ? 0.38 : 1, filter: folded ? "grayscale(.7)" : "none", transition: "opacity .35s, filter .35s" }}>
-      <div style={{ height: 44, display: "flex", alignItems: "flex-end", gap: 3 }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: big ? 5 : 4, width: big ? "min(120px, 16vw)" : "min(78px, 23vw)", opacity: folded ? 0.38 : 1, filter: folded ? "grayscale(.7)" : "none", transition: "opacity .35s, filter .35s" }}>
+      <div style={{ height: big ? 64 : 44, display: "flex", alignItems: "flex-end", gap: big ? 4 : 3 }}>
         {p.revealed && !p.folded
-          ? p.cards.map((c, i) => <CardFace key={`r${dealKey}-${i}`} card={c} w={30} h={42} fs={12} className="flip-in" style={{ animationDelay: `${i * 90}ms` }} />)
+          ? p.cards.map((c, i) => <CardFace key={`r${dealKey}-${i}`} card={c} w={cw} h={ch} fs={cfs} className="flip-in" style={{ animationDelay: `${i * 90}ms` }} />)
           : !p.folded && p.cards.length
-            ? [0, 1].map(i => <CardBack key={`${dealKey}-${i}`} className="deal-in" style={{ animationDelay: `${(i * 5 + seatIdx) * 55}ms` }} />)
-            : <div style={{ height: 42 }} />}
+            ? [0, 1].map(i => <CardBack key={`${dealKey}-${i}`} w={cw} h={ch} className="deal-in" style={{ animationDelay: `${(i * 5 + seatIdx) * 55}ms` }} />)
+            : <div style={{ height: ch }} />}
       </div>
       <div style={{ position: "relative" }} ref={innerRef}>
         <div className={isTurn ? "turn-pulse" : ""} style={{
-          width: 44, height: 44, borderRadius: 22, background: C.surface,
+          width: av, height: av, borderRadius: av / 2, background: C.surface,
           border: `2px solid ${isTurn ? C.accent : C.line}`,
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 21,
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: avFs,
           transition: "border-color .2s",
         }}>{p.emoji}</div>
         {isDealer && (
           <div style={{
-            position: "absolute", right: -6, bottom: -2, width: 17, height: 17, borderRadius: 9,
-            background: C.ink, color: C.onPrim, fontSize: 9, fontWeight: 800,
+            position: "absolute", right: -6, bottom: -2, width: big ? 20 : 17, height: big ? 20 : 17, borderRadius: big ? 10 : 9,
+            background: C.ink, color: C.onPrim, fontSize: big ? 11 : 9, fontWeight: 800,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>D</div>
         )}
       </div>
-      {isTurn && deadline ? <TimerBar deadline={deadline} width={44} /> : null}
-      <div style={{ fontSize: 11, fontWeight: 700, color: dimmed ? C.faint : C.ink }}>{p.name}{dimmed ? " ⚡" : ""}</div>
-      <div style={{ fontSize: 11, color: C.muted, fontVariantNumeric: "tabular-nums", marginTop: -3 }}>{fmt(p.chips)}</div>
-      <div style={{ height: 18 }}>
+      {isTurn && deadline ? <TimerBar deadline={deadline} width={av} /> : null}
+      <div style={{ fontSize: nameFs, fontWeight: 700, color: dimmed ? C.faint : C.ink }}>{p.name}{dimmed ? " ⚡" : ""}</div>
+      <div style={{ fontSize: chipFs, color: C.muted, fontVariantNumeric: "tabular-nums", marginTop: -3 }}>{fmt(p.chips)}</div>
+      <div style={{ height: big ? 22 : 18 }}>
         {pct != null ? (
-          <div key={Math.round(pct * 100)} className="bet-pop" style={{ fontSize: 10, fontWeight: 800, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums", color: pct >= 0.5 ? "#fff" : pct === 0 ? C.faint : C.ink, background: pct >= 0.5 ? C.green : C.surface, border: `1px solid ${pct >= 0.5 ? C.green : C.line}` }}>
+          <div key={Math.round(pct * 100)} className="bet-pop" style={{ fontSize: badgeFs, fontWeight: 800, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums", color: pct >= 0.5 ? "#fff" : pct === 0 ? C.faint : C.ink, background: pct >= 0.5 ? C.green : C.surface, border: `1px solid ${pct >= 0.5 ? C.green : C.line}` }}>
             {Math.round(pct * 100)}%
           </div>
         ) : p.bet > 0 ? (
-          <div key={p.bet} className="bet-pop" style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: `${C.accent}14`, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums" }}>
+          <div key={p.bet} className="bet-pop" style={{ fontSize: badgeFs, fontWeight: 700, color: C.accent, background: `${C.accent}14`, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums" }}>
             {fmt(p.bet)}
           </div>
         ) : p.lastAction ? (
-          <div className="fade-in" style={{ fontSize: 10, fontWeight: 600, color: p.lastAction === "Fold" ? C.faint : C.muted, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 9, padding: "1px 8px" }}>
+          <div className="fade-in" style={{ fontSize: badgeFs, fontWeight: 600, color: p.lastAction === "Fold" ? C.faint : C.muted, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 9, padding: "1px 8px" }}>
             {p.lastAction}
           </div>
         ) : null}
