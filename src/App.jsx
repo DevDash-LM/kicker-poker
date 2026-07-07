@@ -4,7 +4,7 @@ import {
   RANK_STR, fmt, potOf, clone, eval7, handLabel, simEquity,
   AI_SEED, pickNames, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
 } from "./game/logic.js";
-import { CardFace, Seat, Btn, ChipDot, TimerBar } from "./components.jsx";
+import { CardFace, Seat, Btn, ChipDot, TimerBar, useCountUp } from "./components.jsx";
 import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
 import * as store from "./storage.js";
 import { Net, loadProfile, saveProfile } from "./net.js";
@@ -24,27 +24,6 @@ function useMedia(query) {
     return () => mq.removeEventListener("change", h);
   }, [query]);
   return match;
-}
-
-function useCountUp(value, dur = 380) {
-  const [disp, setDisp] = useState(value);
-  const fromRef = useRef(value);
-  useEffect(() => {
-    const from = fromRef.current, to = value;
-    if (from === to) return;
-    const t0 = performance.now();
-    let raf;
-    const tick = now => {
-      const k = Math.min(1, (now - t0) / dur);
-      const e = 1 - Math.pow(1 - k, 3);
-      const v = Math.round(from + (to - from) * e);
-      setDisp(v); fromRef.current = v;
-      if (k < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [value, dur]);
-  return disp;
 }
 
 function ChipFlyer({ from, to, delay }) {
@@ -336,6 +315,8 @@ export default function App() {
     () => (game && game.stage === "runout" ? runoutEquities(game.players, game.board) : null),
     [game?.stage, game?.board.length, game?.handNo]
   );
+  const runPct0 = runPcts && runPcts[0] != null ? Math.round(runPcts[0] * 100) : null;
+  const runPctDisp = useCountUp(runPct0 ?? 0, 320);
   const sbAmt = game?.blinds?.sb ?? settings.sb;
   const bbAmt = game?.blinds?.bb ?? settings.bb;
 
@@ -872,7 +853,7 @@ export default function App() {
 
   const heroPct =
     game.stage === "runout" && runPcts && runPcts[0] != null
-      ? { val: Math.round(runPcts[0] * 100), win: runPcts[0] >= 0.5 }
+      ? { val: runPctDisp, win: runPcts[0] >= 0.5 }
       : (!hero.folded && equity !== null && game.stage === "hand" && settings.showEquity)
       ? { val: eqDisp, win: equity > 0.5 }
       : null;
@@ -884,14 +865,14 @@ export default function App() {
         {game.dealer === 0 && <span style={{ marginLeft: 6, background: C.ink, color: C.onPrim, borderRadius: 8, padding: "1px 6px", fontSize: 10, fontWeight: 800 }}>D</span>}
       </div>
       {game.stage === "runout" && runPcts && runPcts[0] != null && (
-        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: runPcts[0] >= 0.5 ? C.green : runPcts[0] === 0 ? C.red : C.ink, fontVariantNumeric: "tabular-nums" }}>
-          <span key={Math.round(runPcts[0] * 100)} className="bet-pop" style={{ display: "inline-block" }}>{Math.round(runPcts[0] * 100)}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: runPcts[0] >= 0.5 ? C.green : runPcts[0] === 0 ? C.red : C.ink, fontVariantNumeric: "tabular-nums", transition: "color .3s ease" }}>
+          <span style={{ display: "inline-block" }}>{runPctDisp}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
         </div>
       )}
       {!hero.folded && equity !== null && game.stage === "hand" && settings.showEquity && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: infoAlign, gap: 4 }}>
           <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: equity > 0.5 ? C.green : C.ink, fontVariantNumeric: "tabular-nums", transition: "color .3s" }}>
-            <span key={eqDisp} className="bet-pop" style={{ display: "inline-block" }}>{eqDisp}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
+            <span style={{ display: "inline-block" }}>{eqDisp}</span><span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>% to win</span>
           </div>
           <div style={{ width: 110, height: 5, borderRadius: 3, background: C.line, overflow: "hidden" }}>
             <div className="eq-bar-fill" style={{ width: `${equity * 100}%`, height: "100%", background: equity > 0.5 ? C.green : C.accent }} />
@@ -1149,7 +1130,7 @@ export default function App() {
                 ))}
               </div>
               {heroPct && (
-                <div key={heroPct.val} className="bet-pop" style={{ marginTop: 10, fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)" }}>
+                <div style={{ marginTop: 10, fontSize: 13, fontWeight: 800, color: heroPct.win ? C.green : C.ink, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "3px 11px", fontVariantNumeric: "tabular-nums", boxShadow: "0 4px 12px rgba(20,24,33,.12)", transition: "color .3s ease" }}>
                   {heroPct.val}<span style={{ color: C.muted, fontWeight: 700 }}>% win</span>
                 </div>
               )}

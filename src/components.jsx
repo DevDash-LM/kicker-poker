@@ -1,4 +1,28 @@
-import { Component, useState, useEffect } from "react";
+import { Component, useState, useEffect, useRef } from "react";
+
+// Smoothly animates a displayed integer toward its target (ease-out cubic).
+// Shared by the pot, live win%, and seat equity readouts so a changing
+// number rolls in place instead of being remounted (which caused flicker).
+export function useCountUp(value, dur = 380) {
+  const [disp, setDisp] = useState(value);
+  const fromRef = useRef(value);
+  useEffect(() => {
+    const from = fromRef.current, to = value;
+    if (from === to) return;
+    const t0 = performance.now();
+    let raf;
+    const tick = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      const v = Math.round(from + (to - from) * e);
+      setDisp(v); fromRef.current = v;
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, dur]);
+  return disp;
+}
 import { C, SUIT_META, FONT } from "./theme.js";
 import { RANK_STR, fmt } from "./game/logic.js";
 import { S, buzz } from "./fx/fx.js";
@@ -62,6 +86,7 @@ export function TimerBar({ deadline, total = 30000, width = 110 }) {
 }
 
 export function Seat({ p, isTurn, isDealer, folded, dealKey, seatIdx, innerRef, deadline, dimmed, pct, big }) {
+  const pctDisp = useCountUp(pct != null ? Math.round(pct * 100) : 0, 300);
   const cw = big ? 48 : 30, ch = big ? 68 : 42, cfs = big ? 19 : 12;
   const av = big ? 64 : 44, avFs = big ? 30 : 21;
   const nameFs = big ? 14 : 11, chipFs = big ? 14 : 11, badgeFs = big ? 13 : 10;
@@ -94,8 +119,8 @@ export function Seat({ p, isTurn, isDealer, folded, dealKey, seatIdx, innerRef, 
       <div style={{ fontSize: chipFs, color: C.muted, fontVariantNumeric: "tabular-nums", marginTop: -3 }}>{fmt(p.chips)}</div>
       <div style={{ height: big ? 24 : 18 }}>
         {pct != null ? (
-          <div key={Math.round(pct * 100)} className="bet-pop" style={{ fontSize: badgeFs, fontWeight: 800, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums", color: pct >= 0.5 ? "#fff" : pct === 0 ? C.faint : C.ink, background: pct >= 0.5 ? C.green : C.surface, border: `1px solid ${pct >= 0.5 ? C.green : C.line}` }}>
-            {Math.round(pct * 100)}%
+          <div style={{ fontSize: badgeFs, fontWeight: 800, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums", color: pct >= 0.5 ? "#fff" : pct === 0 ? C.faint : C.ink, background: pct >= 0.5 ? C.green : C.surface, border: `1px solid ${pct >= 0.5 ? C.green : C.line}`, transition: "color .3s ease, background .3s ease, border-color .3s ease" }}>
+            {pctDisp}%
           </div>
         ) : p.bet > 0 ? (
           <div key={p.bet} className="bet-pop" style={{ fontSize: badgeFs, fontWeight: 700, color: C.accent, background: `${C.accent}14`, borderRadius: 9, padding: "2px 8px", fontVariantNumeric: "tabular-nums" }}>
