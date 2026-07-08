@@ -534,7 +534,7 @@ export default function App() {
       buzz(22);
       setFoldFly(true);          // fling the cards up into the muck
       setFoldDragY(0);           // hand off transform to the fly-out animation
-      setTimeout(() => act({ type: "fold" }), 220);
+      setTimeout(() => act({ type: "fold" }), 380);
     } else {
       if (dy < -8) S.tap();
       setFoldDragY(0);           // spring back for an incomplete swipe
@@ -1230,7 +1230,7 @@ export default function App() {
                     opacity: foldFly ? 0 : hero.folded ? 0.35 : 1 - Math.min(0.5, (-foldDragY) / 220),
                     transform: foldFly ? "translateY(-280px) scale(0.45) rotate(-4deg)" : `translateY(${foldDragY}px)`,
                     transition: foldFly
-                      ? "transform .5s cubic-bezier(.4,0,.55,1), opacity .5s ease-in"
+                      ? "transform .42s cubic-bezier(.22,.7,.3,1), opacity .34s linear"
                       : foldGestureRef.current.dragging ? "opacity .1s" : "transform .3s cubic-bezier(.2,.8,.3,1), opacity .35s",
                     touchAction: isHeroTurn && !hero.folded ? "none" : "auto",
                     cursor: isHeroTurn && !hero.folded ? "grab" : "default",
