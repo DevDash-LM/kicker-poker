@@ -1,3 +1,7 @@
+# Fixed project name: the network (kicker_default) and container names stay
+# identical no matter which folder you deploy from — so Caddy keeps resolving it.
+name: kicker
+
 services:
   kicker:
     build:

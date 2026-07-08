@@ -10,6 +10,10 @@ import {
 } from "./account-util.js";
 
 const RESEND_COOLDOWN = 30; // seconds
+// Supabase email OTP length is configurable (6–10 digits). Accept the full
+// range so a longer emailed code is not silently truncated on input.
+const CODE_MIN = 6;
+const CODE_MAX = 10;
 
 function Overlay({ children }) {
   return (
@@ -77,7 +81,7 @@ export function SignInModal({ onClose, onSignedIn }) {
 
   const verify = async () => {
     const c = code.trim();
-    if (c.length < 6) { setErr("Enter the 6-digit code from your email."); return; }
+    if (c.length < CODE_MIN) { setErr(`Enter the ${CODE_MIN}-digit code from your email.`); return; }
     setBusy(true); setErr(null);
     try {
       const user = await acct.verifyCode(email, c);
@@ -114,15 +118,15 @@ export function SignInModal({ onClose, onSignedIn }) {
           <div style={{ marginTop: 18 }}>
             <Label>Confirmation code</Label>
             <Field type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="123456"
-              value={code} maxLength={6}
-              onChange={e => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+              value={code} maxLength={CODE_MAX}
+              onChange={e => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, CODE_MAX))}
               onKeyDown={e => e.key === "Enter" && verify()}
               style={{ letterSpacing: ".4em", fontWeight: 800, textAlign: "center", fontSize: 22 }} />
           </div>
           {ok && !err && <div style={{ marginTop: 10 }}><Note color={C.green}>{ok}</Note></div>}
           {err && <div style={{ marginTop: 10 }}><Note color={C.red}>{err}</Note></div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-            <Btn kind="accent" onClick={verify} disabled={busy || code.length < 6}>{busy ? "Signing in…" : "Sign in"}</Btn>
+            <Btn kind="accent" onClick={verify} disabled={busy || code.length < CODE_MIN}>{busy ? "Signing in…" : "Sign in"}</Btn>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => { setStep("email"); setErr(null); setOk(null); setCode(""); }} disabled={busy} style={{ fontSize: 13, padding: "11px 0" }}>Change email</Btn>
               <Btn onClick={resend} disabled={busy || cooldown > 0} style={{ fontSize: 13, padding: "11px 0" }}>
