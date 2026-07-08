@@ -63,7 +63,7 @@ export function renderCodeEmailHtml({ code, logoUrl }) {
           </td></tr>
           <tr><td style="padding:22px 28px;">
             <div style="background:${BRAND.bg};border:1px solid ${BRAND.line};border-radius:14px;padding:20px;text-align:center;">
-              <div style="font:800 34px/1 'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;letter-spacing:.34em;color:${BRAND.ink};padding-left:.34em;">
+              <div style="font:800 28px/1 'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;letter-spacing:.24em;color:${BRAND.ink};padding-left:.24em;white-space:nowrap;">
                 ${safeCode}
               </div>
             </div>

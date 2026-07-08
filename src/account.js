@@ -201,3 +201,42 @@ export async function dismissInvite(id) {
   const { error } = await sb.from("room_invites").delete().eq("id", id);
   if (error) throw error;
 }
+
+// ---- cloud save (stats / prefs / settings / history) ----------------------
+
+// Read the signed-in user's saved state. Returns null when accounts are off,
+// nobody is signed in, or the user has no saved row yet (first sign-in).
+export async function loadUserState() {
+  if (!sb) return null;
+  const user = await getUser();
+  if (!user) return null;
+  const { data, error } = await sb
+    .from("user_state")
+    .select("stats, prefs, settings, history")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+// Upsert the signed-in user's saved state. No-op (returns null) when accounts
+// are off or nobody is signed in, so callers can fire it unconditionally.
+export async function saveUserState(state) {
+  if (!sb) return null;
+  const user = await getUser();
+  if (!user) return null;
+  const row = {
+    id: user.id,
+    stats: state?.stats ?? {},
+    prefs: state?.prefs ?? {},
+    settings: state?.settings ?? {},
+    history: state?.history ?? [],
+  };
+  const { data, error } = await sb
+    .from("user_state")
+    .upsert(row, { onConflict: "id" })
+    .select("stats, prefs, settings, history")
+    .single();
+  if (error) throw error;
+  return data;
+}

@@ -13,6 +13,7 @@ import { REACTIONS, AVATARS } from "../server/protocol.js";
 import * as acct from "./account.js";
 import { accountsEnabled } from "./account.js";
 import { SignInModal, AccountScreen, InviteFriends, IncomingInvites } from "./account-ui.jsx";
+import * as sync from "./sync.js";
 
 const BLIND_PRESETS = [[25, 50], [50, 100], [100, 200], [250, 500]];
 const STACK_PRESETS = [5000, 10000, 25000, 50000];
@@ -193,13 +194,23 @@ export default function App() {
         const p = await acct.loadProfile();
         if (live && p) { setAccProfile(p); setProfile(pr => ({ ...pr, name: p.display_name, emoji: p.emoji })); }
       } catch {}
+      try {
+        // Cloud wins: pull the account's saved stats/theme/settings/history
+        // down onto this device, then reflect it into React state.
+        await sync.hydrateFromCloud();
+        if (live) {
+          setSettings(store.loadSettings());
+          setHistory(store.loadHistory());
+          const d = isDark(); setDark(d); applyTheme(d);
+        }
+      } catch {}
     };
     acct.getUser().then(hydrate).catch(() => {});
     const unsub = acct.onAuth(hydrate);
     return () => { live = false; unsub(); };
   }, []);
 
-  const toggleDark = () => { const d = !dark; setDark(d); applyTheme(d); S.tap(); buzz(6); };
+  const toggleDark = () => { const d = !dark; setDark(d); applyTheme(d); sync.pushSoon(); S.tap(); buzz(6); };
   const toggleMute = () => {
     const m = !muted;
     setMutedUI(m); setMuted(m);
@@ -338,7 +349,7 @@ export default function App() {
     const st = store.loadStats();
     st.tables += 1;
     st.rebuys += session.rebuys;
-    store.saveStats(st);
+    store.saveStats(st); sync.pushSoon();
     store.clearSave();
     setSaved(null);
     setGame(null);
@@ -351,6 +362,9 @@ export default function App() {
   const potDisp = useCountUp(pot);
   const isHeroTurn = game?.stage === "hand" && game.turn === 0;
   const toCall = game ? Math.max(0, game.currentBet - (hero?.bet || 0)) : 0;
+  // BB option: big blind preflop with no raise has nothing to call, so folding
+  // is never correct — disable it (they can only check or raise).
+  const foldDisabled = !!game && game.bb === 0 && game.street === "preflop" && toCall === 0;
   const eqDisp = useCountUp(equity === null ? 0 : Math.round(equity * 100), 300);
   const runPcts = useMemo(
     () => (game && game.stage === "runout" ? runoutEquities(game.players, game.board) : null),
@@ -498,7 +512,7 @@ export default function App() {
     st.won += heroWin ? 1 : 0;
     st.net += net;
     st.biggestPot = Math.max(st.biggestPot, heroWin ? heroWin.amount : 0);
-    store.saveStats(st);
+    store.saveStats(st); sync.pushSoon();
   }, [game?.stage]);
 
   // Record a tournament result once, when the hero is eliminated or crowned
@@ -518,7 +532,7 @@ export default function App() {
     st.tourneys = (st.tourneys || 0) + 1;
     st.tourneyWins = (st.tourneyWins || 0) + (heroWon ? 1 : 0);
     st.bestFinish = st.bestFinish ? Math.min(st.bestFinish, place) : place;
-    store.saveStats(st);
+    store.saveStats(st); sync.pushSoon();
     setGame(g => (g && g.stage === "over" ? { ...g, statsRecorded: true } : g));
   }, [game?.stage, game?.champion, mode]);
 
@@ -549,7 +563,7 @@ export default function App() {
   };
   const FOLD_THRESHOLD = 72;
   const onFoldDown = e => {
-    if (!isHeroTurn || hero?.folded || foldFly) return;
+    if (!isHeroTurn || hero?.folded || foldFly || foldDisabled) return;
     foldGestureRef.current = { startY: e.clientY, dragging: true, dy: 0 };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
@@ -565,7 +579,7 @@ export default function App() {
     if (!g.dragging) return;
     const dy = g.dy;
     foldGestureRef.current = { startY: 0, dragging: false, dy: 0 };
-    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded) {
+    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded && !foldDisabled) {
       buzz(22);
       setFoldFly(true);          // fling the cards up into the muck
       setFoldDragY(0);           // hand off transform to the fly-out animation
@@ -685,7 +699,7 @@ export default function App() {
 
   if (screen === "setup") {
     const cfg = settings;
-    const upd = patch => { const n = { ...cfg, ...patch }; setSettings(n); store.saveSettings(n); };
+    const upd = patch => { const n = { ...cfg, ...patch }; setSettings(n); store.saveSettings(n); sync.pushSoon(); };
     return (
       <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
@@ -1001,7 +1015,7 @@ export default function App() {
             <StatRow label="Best finish" value={st.bestFinish ? ordinal(st.bestFinish) : "—"} />
           </div>
           <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
-            <Btn kind="danger" onClick={() => { store.resetStats(); setScreen("home"); setTimeout(() => setScreen("stats"), 0); }} style={{ width: "100%" }}>Reset stats</Btn>
+            <Btn kind="danger" onClick={() => { store.resetStats(); sync.pushSoon(); setScreen("home"); setTimeout(() => setScreen("stats"), 0); }} style={{ width: "100%" }}>Reset stats</Btn>
           </div>
         </div>
       </div>
@@ -1182,7 +1196,7 @@ export default function App() {
         </div>
       ) : (
         <div style={{ display: "flex", gap: 8 }}>
-          <Btn kind="danger" onClick={() => act({ type: "fold" })}>Fold</Btn>
+          <Btn kind="danger" disabled={foldDisabled} onClick={() => act({ type: "fold" })}>Fold</Btn>
           <Btn kind="ghost" onClick={() => act({ type: "call" })}>
             {toCall === 0 ? "Check" : `Call ${fmt(Math.min(toCall, hero.chips))}`}
           </Btn>
