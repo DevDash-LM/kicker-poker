@@ -3,7 +3,7 @@ import { readFileSync, existsSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer } from "ws";
-import { startHand, applyAction, decideAI, stepRunout, AI_SEED, secureInt } from "../src/game/logic.js";
+import { startHand, applyAction, decideAI, stepRunout, AI_SEED, secureInt, aliveCount } from "../src/game/logic.js";
 import {
   PROTO, MAX_SEATS, TURN_MS, RECONNECT_GRACE_MS, NEXT_HAND_MS, REACTIONS,
   makeCode, sanitizeName, sanitizeAvatar, mkPlayer, redactFor, validAction, validConfig,
@@ -175,17 +175,38 @@ export function createServer(port = 8787) {
     if (live.length === 0) return destroyRoom(room, false);
     if (room.host && !live.some(m => m.id === room.host)) room.host = live[0].id;
 
+    const tournament = room.config.tournament;
+    // Tournaments end when only one stack remains across humans and AI. Freeze the
+    // finished hand on screen with the champion named instead of dealing again.
+    if (tournament && room.game) {
+      const humanSurv = live.filter(m => m.chips > 0).length;
+      const aiSurv = (room.aiChips || []).filter(c => c > 0).length;
+      if (humanSurv + aiSurv <= 1) {
+        const g = room.game;
+        const champ = g.players.find(p => p.chips > 0);
+        g.champion = champ ? champ.name : null;
+        g.stage = "over";
+        room.deadline = null;
+        broadcastState(room);
+        return;
+      }
+    }
+
     const humans = live.map((m, i) => {
       m.seat = i;
-      if (m.chips <= 0) { m.chips = room.config.stack; m.rebuys = (m.rebuys || 0) + 1; }
+      // Cash games rebuy busted players; tournaments leave them out (0 chips = sit out).
+      if (!tournament && m.chips <= 0) { m.chips = room.config.stack; m.rebuys = (m.rebuys || 0) + 1; }
       return mkPlayer(m.name, m.emoji, false, m.chips);
     });
     let ais = [];
     if (room.config.fillAI) {
-      ais = AI_SEED.slice(0, MAX_SEATS - humans.length).map((a, i) => ({
-        ...mkPlayer(a.name, a.emoji, true, room.aiChips?.[i] > 0 ? room.aiChips[i] : room.config.stack),
-        aggr: a.aggr, loose: a.loose,
-      }));
+      ais = AI_SEED.slice(0, MAX_SEATS - humans.length).map((a, i) => {
+        const prevChips = room.aiChips?.[i];
+        const chips = tournament
+          ? (prevChips ?? room.config.stack)
+          : (prevChips > 0 ? prevChips : room.config.stack);
+        return { ...mkPlayer(a.name, a.emoji, true, chips), aggr: a.aggr, loose: a.loose };
+      });
     }
     const players = [...humans, ...ais];
     if (players.length < 2) {
@@ -218,6 +239,7 @@ export function createServer(port = 8787) {
       players, dealer: secureInt(players.length), handNo: 0,
       board: [], deck: [], stage: "hand",
       blinds: { sb: room.config.sb, bb: room.config.bb }, startStack: room.config.stack,
+      tournament: room.config.tournament,
     });
     broadcastRoom(room);
     afterAction(room);

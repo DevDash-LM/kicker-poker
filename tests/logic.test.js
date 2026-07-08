@@ -3,6 +3,7 @@ import {
   SB, BB, START,
   freshDeck, eval5, eval7, cmpScore, handLabel, simEquity,
   potOf, startHand, applyAction, decideAI, stepRunout, runoutEquities, AI_SEED, secureInt,
+  aliveCount, tourneyOver,
 } from "../src/game/logic.js";
 
 const c = (r, s) => ({ r, s });
@@ -341,5 +342,59 @@ describe("RNG / deck integrity", () => {
     expect(secureInt(1)).toBe(0);
     expect(() => secureInt(0)).toThrow();
     expect(() => secureInt(-3)).toThrow();
+  });
+});
+
+describe("tournament mode", () => {
+  const mkTourney = (chipsArr, extra = {}) => startHand({
+    players: [
+      mkPlayer("You", chipsArr[0], false),
+      ...chipsArr.slice(1).map((ch, i) => mkPlayer("AI" + i, ch)),
+    ],
+    dealer: 0, handNo: 0, board: [], deck: [], stage: "hand",
+    blinds: { sb: SB, bb: BB }, startStack: START, tournament: true,
+    ...extra,
+  });
+
+  it("does not rebuy short AI stacks (cash mode does)", () => {
+    const cash = startHand({
+      players: [mkPlayer("You", START, false), mkPlayer("AI0", 10)],
+      dealer: 0, handNo: 0, board: [], deck: [], stage: "hand",
+      blinds: { sb: SB, bb: BB }, startStack: START,
+    });
+    // Cash tops the short AI back up to the starting stack.
+    expect(cash.players[1].chips + cash.players[1].total).toBe(START);
+
+    const tourney = mkTourney([START, 10]);
+    // Tournament leaves the short stack alone (it just posts what it can).
+    expect(tourney.players[1].chips + tourney.players[1].total).toBe(10);
+  });
+
+  it("marks busted players as sitting out and deals them no cards", () => {
+    const g = mkTourney([START, 0, START]);
+    expect(g.players[1].sitOut).toBe(true);
+    expect(g.players[1].folded).toBe(true);
+    expect(g.players[1].cards.length).toBe(0);
+    // Players with chips are dealt in and not sitting out.
+    expect(g.players[0].sitOut).toBe(false);
+    expect(g.players[0].cards.length).toBe(2);
+  });
+
+  it("tracks alive count and detects the tournament winner", () => {
+    const g = mkTourney([START, 0, 0]);
+    expect(aliveCount(g)).toBe(1);
+    expect(tourneyOver(g)).toBe(true);
+    const g2 = mkTourney([START, START, 0]);
+    expect(aliveCount(g2)).toBe(2);
+    expect(tourneyOver(g2)).toBe(false);
+  });
+
+  it("tourneyOver is false for cash games regardless of stacks", () => {
+    const cash = startHand({
+      players: [mkPlayer("You", START, false), mkPlayer("AI0", 0)],
+      dealer: 0, handNo: 0, board: [], deck: [], stage: "hand",
+      blinds: { sb: SB, bb: BB }, startStack: START,
+    });
+    expect(tourneyOver(cash)).toBe(false);
   });
 });

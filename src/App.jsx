@@ -3,6 +3,7 @@ import { C, FONT, isDark, applyTheme } from "./theme.js";
 import {
   RANK_STR, fmt, potOf, clone, eval7, handLabel, simEquity,
   AI_SEED, pickNames, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
+  aliveCount, tourneyOver,
 } from "./game/logic.js";
 import { CardFace, Seat, Btn, ChipDot, TimerBar, useCountUp } from "./components.jsx";
 import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
@@ -110,6 +111,7 @@ function StatRow({ label, value, color }) {
 
 const netColor = n => (n > 0 ? C.green : n < 0 ? C.red : C.muted);
 const netStr = n => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : "0");
+const ordinal = n => { const t = n % 100; return `${n}${t >= 11 && t <= 13 ? "th" : ["th","st","nd","rd"][n % 10] || "th"}`; };
 
 export default function App() {
   const [screen, setScreen] = useState("home");
@@ -138,6 +140,7 @@ export default function App() {
   const [connList, setConnList] = useState([]);
   const [copied, setCopied] = useState(false);
   const [foldDragY, setFoldDragY] = useState(0);
+  const [foldFly, setFoldFly] = useState(false);
   const foldGestureRef = useRef({ startY: 0, dragging: false, dy: 0 });
   const wide = useMedia("(min-width: 700px)");
   const short = useMedia("(max-height: 500px)");
@@ -242,7 +245,7 @@ export default function App() {
   };
   const createRoom = () => {
     setNetErr(null); saveProfile(profile);
-    sendWhenReady({ type: "create", profile, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false } });
+    sendWhenReady({ type: "create", profile, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false, tournament: !!settings.tournament } });
   };
   const joinRoom = () => {
     const code = joinCode.trim().toUpperCase();
@@ -268,13 +271,14 @@ export default function App() {
 
   const newTable = (cfg) => {
     const botNames = pickNames(cfg.ai);
+    const stack = Math.max(500, Math.min(1000000, cfg.stack || 10000));
     const players = [
-      { name: "You", emoji: "🙂", ai: false, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
-      ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
+      { name: "You", emoji: "🙂", ai: false, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
+      ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
     ];
     const base = {
       players, dealer: secureInt(players.length), handNo: 0, board: [], deck: [], stage: "hand",
-      blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: cfg.stack,
+      blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: stack, tournament: !!cfg.tournament,
     };
     setSession({ hands: 0, won: 0, biggest: 0, rebuys: 0 });
     setGame(startHand(base));
@@ -462,6 +466,27 @@ export default function App() {
     store.saveStats(st);
   }, [game?.stage]);
 
+  // Record a tournament result once, when the hero is eliminated or crowned
+  // champion. statsRecorded is written onto the game so it survives a reload of
+  // a finished solo table and can't be double-counted.
+  useEffect(() => {
+    if (!game || !game.tournament || game.stage !== "over" || game.statsRecorded) return;
+    const heroName = game.players[0].name;
+    const heroChips = game.players[0].chips;
+    const mpChamp = mode === "mp" && !!game.champion;
+    const heroWon = mpChamp ? game.champion === heroName : (mode !== "mp" && heroChips > 0 && aliveCount(game) <= 1);
+    const heroBusted = heroChips === 0;
+    if (!(heroWon || heroBusted || mpChamp)) return;
+    // Finish place: 1 for a win, otherwise everyone still holding chips outlasted the hero.
+    const place = heroWon ? 1 : aliveCount(game) + 1;
+    const st = store.loadStats();
+    st.tourneys = (st.tourneys || 0) + 1;
+    st.tourneyWins = (st.tourneyWins || 0) + (heroWon ? 1 : 0);
+    st.bestFinish = st.bestFinish ? Math.min(st.bestFinish, place) : place;
+    store.saveStats(st);
+    setGame(g => (g && g.stage === "over" ? { ...g, statsRecorded: true } : g));
+  }, [game?.stage, game?.champion, mode]);
+
   const skipRef = useRef(false);
   const skipHand = () => {
     S.tap(); buzz(8);
@@ -478,7 +503,7 @@ export default function App() {
   useEffect(() => {
     if (game?.stage !== "over" || !skipRef.current || mode !== "solo") return;
     skipRef.current = false;
-    const t = setTimeout(() => setGame(g => (g && g.stage === "over" && g.players[0].chips > 0 ? startHand(g) : g)), 650);
+    const t = setTimeout(() => setGame(g => (g && g.stage === "over" && g.players[0].chips > 0 && !tourneyOver(g) ? startHand(g) : g)), 650);
     return () => clearTimeout(t);
   }, [game?.stage]);
 
@@ -489,7 +514,7 @@ export default function App() {
   };
   const FOLD_THRESHOLD = 72;
   const onFoldDown = e => {
-    if (!isHeroTurn || hero?.folded) return;
+    if (!isHeroTurn || hero?.folded || foldFly) return;
     foldGestureRef.current = { startY: e.clientY, dragging: true, dy: 0 };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
@@ -505,10 +530,17 @@ export default function App() {
     if (!g.dragging) return;
     const dy = g.dy;
     foldGestureRef.current = { startY: 0, dragging: false, dy: 0 };
-    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded) { buzz(22); act({ type: "fold" }); }
-    else if (dy < -8) { S.tap(); }
-    setFoldDragY(0);
+    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded) {
+      buzz(22);
+      setFoldFly(true);          // fling the cards up into the muck
+      setFoldDragY(0);           // hand off transform to the fly-out animation
+      setTimeout(() => act({ type: "fold" }), 220);
+    } else {
+      if (dy < -8) S.tap();
+      setFoldDragY(0);           // spring back for an incomplete swipe
+    }
   };
+  useEffect(() => { setFoldFly(false); setFoldDragY(0); }, [game?.handNo]);
   const openRaise = () => {
     const minTo = Math.min(game.currentBet + game.minRaise, hero.bet + hero.chips);
     setRaiseTo(minTo);
@@ -561,7 +593,7 @@ export default function App() {
             ) : (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
-                  <span style={{ color: C.muted, fontSize: 14 }}>Cash game · {settings.ai + 1}-handed</span>
+                  <span style={{ color: C.muted, fontSize: 14 }}>{settings.tournament ? "Tournament" : "Cash game"} · {settings.ai + 1}-handed</span>
                   <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>Blinds {settings.sb}/{settings.bb}</span>
                 </div>
                 <Btn kind="primary" onClick={() => setScreen("setup")} style={{ padding: "17px 0", fontSize: 16 }}>Take a seat</Btn>
@@ -594,6 +626,17 @@ export default function App() {
           </div>
           <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
             <div>
+              <SetupLabel>Format</SetupLabel>
+              <OptionRow options={[false, true]} value={!!cfg.tournament}
+                onChange={tournament => upd({ tournament })}
+                render={v => (v ? "Tournament" : "Cash game")} />
+              <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>
+                {cfg.tournament
+                  ? "One buy-in. Busted players are out — last one standing wins."
+                  : "Short stacks auto-rebuy so the table stays full."}
+              </div>
+            </div>
+            <div>
               <SetupLabel>Blinds</SetupLabel>
               <OptionRow options={BLIND_PRESETS} value={[cfg.sb, cfg.bb]}
                 onChange={([sb, bb]) => upd({ sb, bb })} render={([sb, bb]) => `${sb}/${bb}`} />
@@ -602,6 +645,12 @@ export default function App() {
               <SetupLabel>Starting stack</SetupLabel>
               <OptionRow options={STACK_PRESETS} value={cfg.stack}
                 onChange={stack => upd({ stack })} render={v => fmt(v)} />
+              <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
+                value={STACK_PRESETS.includes(cfg.stack) ? "" : cfg.stack}
+                min={500} max={1000000} step={500}
+                onChange={e => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) upd({ stack: v }); }}
+                onBlur={e => { const v = parseInt(e.target.value, 10); upd({ stack: Number.isFinite(v) ? Math.max(500, Math.min(1000000, v)) : 10000 }); }}
+                style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
               <div style={{ fontSize: 12, color: C.faint, marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
                 {Math.round(cfg.stack / cfg.bb)} big blinds deep
               </div>
@@ -733,6 +782,11 @@ export default function App() {
             {isHost ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div>
+                  <SetupLabel>Format</SetupLabel>
+                  <OptionRow options={[false, true]} value={!!room.config.tournament}
+                    onChange={tournament => sendCfg({ tournament })} render={v => (v ? "Tournament" : "Cash game")} />
+                </div>
+                <div>
                   <SetupLabel>Blinds</SetupLabel>
                   <OptionRow options={BLIND_PRESETS} value={[room.config.sb, room.config.bb]}
                     onChange={([sb, bb]) => sendCfg({ sb, bb })} render={([a, b]) => `${a}/${b}`} />
@@ -741,6 +795,12 @@ export default function App() {
                   <SetupLabel>Starting stack</SetupLabel>
                   <OptionRow options={STACK_PRESETS} value={room.config.stack}
                     onChange={stack => sendCfg({ stack })} render={v => fmt(v)} />
+                  <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
+                    value={STACK_PRESETS.includes(room.config.stack) ? "" : room.config.stack}
+                    min={500} max={1000000} step={500}
+                    onChange={e => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) sendCfg({ stack: v }); }}
+                    onBlur={e => { const v = parseInt(e.target.value, 10); sendCfg({ stack: Number.isFinite(v) ? Math.max(500, Math.min(1000000, v)) : 10000 }); }}
+                    style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
                 </div>
                 <div>
                   <SetupLabel>Fill empty seats with AI</SetupLabel>
@@ -750,7 +810,7 @@ export default function App() {
               </div>
             ) : (
               <div style={{ fontSize: 13, color: C.muted, textAlign: "center" }}>
-                Blinds {room.config.sb}/{room.config.bb} · Stack {fmt(room.config.stack)} · {room.config.fillAI ? "AI fill on" : "humans only"}
+                {room.config.tournament ? "Tournament" : "Cash game"} · Blinds {room.config.sb}/{room.config.bb} · Stack {fmt(room.config.stack)} · {room.config.fillAI ? "AI fill on" : "humans only"}
               </div>
             )}
             {netErr && <div style={{ gridColumn: "1 / -1", color: C.red, fontSize: 13, fontWeight: 600, textAlign: "center" }}>{netErr}</div>}
@@ -844,6 +904,12 @@ export default function App() {
             <StatRow label="Net chips" value={netStr(st.net)} color={netColor(st.net)} />
             <StatRow label="Biggest pot won" value={fmt(st.biggestPot)} />
             <StatRow label="Rebuys" value={st.rebuys} />
+            <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
+              <SetupLabel>Tournaments</SetupLabel>
+            </div>
+            <StatRow label="Tournaments played" value={st.tourneys} />
+            <StatRow label="Tournaments won" value={`${st.tourneyWins}${st.tourneys ? ` (${Math.round((st.tourneyWins / st.tourneys) * 100)}%)` : ""}`} color={st.tourneyWins ? C.green : undefined} />
+            <StatRow label="Best finish" value={st.bestFinish ? ordinal(st.bestFinish) : "—"} />
           </div>
           <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
             <Btn kind="danger" onClick={() => { store.resetStats(); setScreen("home"); setTimeout(() => setScreen("stats"), 0); }} style={{ width: "100%" }}>Reset stats</Btn>
@@ -858,6 +924,8 @@ export default function App() {
   const maxTo = hero.bet + hero.chips;
   const minTo = Math.min(game.currentBet + game.minRaise, maxTo);
   const heroBusted = game.stage === "over" && hero.chips === 0;
+  const isTournament = !!game.tournament;
+  const heroChampion = isTournament && game.stage === "over" && aliveCount(game) === 1 && hero.chips > 0;
   const buyIn = (game.startStack || 10000) * (1 + session.rebuys);
   const sessionNet = hero.chips + hero.total - buyIn;
   const stepRaise = d => {
@@ -928,8 +996,24 @@ export default function App() {
       )}
       {game.stage === "over" ? (
         mode === "mp" ? (
-          <div style={{ textAlign: "center", color: C.muted, fontSize: 14, fontWeight: 600, padding: "14px 0" }}>
-            Next hand is on the way…
+          game.champion ? (
+            <div style={{ textAlign: "center", color: C.ink, fontSize: 15, fontWeight: 800, padding: "12px 0" }}>
+              🏆 {game.champion} wins the tournament
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", color: C.muted, fontSize: 14, fontWeight: 600, padding: "14px 0" }}>
+              Next hand is on the way…
+            </div>
+          )
+        ) : isTournament && (heroChampion || heroBusted) ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ textAlign: "center", fontSize: 15, fontWeight: 800, color: heroChampion ? C.green : C.ink }}>
+              {heroChampion ? "🏆 You win the tournament!" : "You busted out — you're eliminated"}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => setLeaveOpen(true)}>Leave</Btn>
+              <Btn kind="primary" onClick={() => setScreen("setup")}>New tournament</Btn>
+            </div>
           </div>
         ) : heroBusted ? (
           <div style={{ display: "flex" }}>
@@ -1141,10 +1225,13 @@ export default function App() {
                 <div
                   onPointerDown={onFoldDown} onPointerMove={onFoldMove} onPointerUp={onFoldUp} onPointerCancel={onFoldUp}
                   style={{
-                    display: "flex", gap: 8,
-                    opacity: hero.folded ? 0.35 : 1 - Math.min(0.5, (-foldDragY) / 220),
-                    transform: `translateY(${foldDragY}px)`,
-                    transition: foldGestureRef.current.dragging ? "opacity .1s" : "transform .3s cubic-bezier(.2,.8,.3,1), opacity .35s",
+                    display: "flex", gap: 8, transformOrigin: "center top",
+                    pointerEvents: foldFly ? "none" : "auto",
+                    opacity: foldFly ? 0 : hero.folded ? 0.35 : 1 - Math.min(0.5, (-foldDragY) / 220),
+                    transform: foldFly ? "translateY(-280px) scale(0.45) rotate(-4deg)" : `translateY(${foldDragY}px)`,
+                    transition: foldFly
+                      ? "transform .5s cubic-bezier(.4,0,.55,1), opacity .5s ease-in"
+                      : foldGestureRef.current.dragging ? "opacity .1s" : "transform .3s cubic-bezier(.2,.8,.3,1), opacity .35s",
                     touchAction: isHeroTurn && !hero.folded ? "none" : "auto",
                     cursor: isHeroTurn && !hero.folded ? "grab" : "default",
                   }}>
