@@ -613,13 +613,25 @@ export default function App() {
   if (screen === "home") {
     return (
       <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", overflow: wide ? undefined : "hidden" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 920 : 420, height: wide ? undefined : "100dvh", display: "flex", flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "stretch", gap: wide ? 56 : 0, padding: "0 24px", paddingTop: "env(safe-area-inset-top)", position: "relative" }}>
-          <button onClick={toggleDark} aria-label="Toggle dark mode"
-            style={{ position: "absolute", top: 18, right: 20, background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
-            {dark ? "☀︎" : "☾"}
-          </button>
-          <img src="/logo-mark.png" alt="Kicker" className="brand-mark"
-            style={{ position: "absolute", top: 16, left: 22, height: 30, width: "auto" }} />
+        <div style={{ width: "100%", maxWidth: wide ? 920 : 420, height: wide ? undefined : "100dvh", display: "flex", flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "stretch", gap: wide ? 56 : 0, padding: "0 24px", paddingTop: wide ? "env(safe-area-inset-top)" : 0, position: "relative" }}>
+          {wide ? (
+            <>
+              <button onClick={toggleDark} aria-label="Toggle dark mode"
+                style={{ position: "absolute", top: 18, right: 20, background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
+                {dark ? "☀︎" : "☾"}
+              </button>
+              <img src="/logo-mark.png" alt="Kicker" className="brand-mark"
+                style={{ position: "absolute", top: 16, left: 22, height: 30, width: "auto" }} />
+            </>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, paddingTop: "calc(env(safe-area-inset-top) + 16px)" }}>
+              <img src="/logo-mark.png" alt="Kicker" className="brand-mark" style={{ height: 28, width: "auto" }} />
+              <button onClick={toggleDark} aria-label="Toggle dark mode"
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
+                {dark ? "☀︎" : "☾"}
+              </button>
+            </div>
+          )}
           {accountOverlays}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 10, minHeight: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
@@ -629,12 +641,12 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <h1 className="rise-in" style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.04em", color: C.ink, margin: 0 }}>Kicker</h1>
+            <h1 className="rise-in" style={{ fontSize: "clamp(34px, 10vw, 42px)", fontWeight: 800, letterSpacing: "-0.04em", color: C.ink, margin: 0 }}>Kicker</h1>
             <p className="rise-in" style={{ color: C.muted, fontSize: 16, lineHeight: 1.5, margin: 0, maxWidth: 300, animationDelay: ".08s" }}>
               Clean Texas Hold'em against AI players. Live win odds on every street — learn as you play.
             </p>
           </div>
-          <div className="rise-in" style={{ width: wide ? 360 : "auto", flexShrink: 0, paddingBottom: wide ? 0 : "calc(32px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10, animationDelay: ".16s" }}>
+          <div className="rise-in" style={{ width: wide ? 360 : "auto", flexShrink: 0, paddingBottom: wide ? 0 : "calc(env(safe-area-inset-bottom) + 18px)", display: "flex", flexDirection: "column", gap: 10, animationDelay: ".16s" }}>
             {saved?.game ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
