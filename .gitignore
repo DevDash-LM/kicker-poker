@@ -13,3 +13,5 @@ server-data
 docs/ACCOUNTS.md
 .env.example
 docs/ACCOUNTS.md
+docs/PROMOTE-TO-MAIN.md
+docs/REDEPLOY-PRODUCTION.md

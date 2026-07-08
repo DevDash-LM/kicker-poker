@@ -26,7 +26,6 @@ game itself is unchanged — with no Supabase env vars set, Kicker runs guest-on
 exactly as before. See [docs/ACCOUNTS.md](docs/ACCOUNTS.md) for setup, the
 branded confirmation-email hook, environment variables, and test steps.
 To try changes on an isolated testing subdomain first, see
-[docs/STAGING.md](docs/STAGING.md).
 
 ## License
 
