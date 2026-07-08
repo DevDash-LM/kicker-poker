@@ -140,6 +140,7 @@ export default function App() {
   const [connList, setConnList] = useState([]);
   const [copied, setCopied] = useState(false);
   const [foldDragY, setFoldDragY] = useState(0);
+  const [foldFly, setFoldFly] = useState(false);
   const foldGestureRef = useRef({ startY: 0, dragging: false, dy: 0 });
   const wide = useMedia("(min-width: 700px)");
   const short = useMedia("(max-height: 500px)");
@@ -513,7 +514,7 @@ export default function App() {
   };
   const FOLD_THRESHOLD = 72;
   const onFoldDown = e => {
-    if (!isHeroTurn || hero?.folded) return;
+    if (!isHeroTurn || hero?.folded || foldFly) return;
     foldGestureRef.current = { startY: e.clientY, dragging: true, dy: 0 };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
@@ -529,10 +530,17 @@ export default function App() {
     if (!g.dragging) return;
     const dy = g.dy;
     foldGestureRef.current = { startY: 0, dragging: false, dy: 0 };
-    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded) { buzz(22); act({ type: "fold" }); }
-    else if (dy < -8) { S.tap(); }
-    setFoldDragY(0);
+    if (dy <= -FOLD_THRESHOLD && isHeroTurn && !hero?.folded) {
+      buzz(22);
+      setFoldFly(true);          // fling the cards up into the muck
+      setFoldDragY(0);           // hand off transform to the fly-out animation
+      setTimeout(() => act({ type: "fold" }), 220);
+    } else {
+      if (dy < -8) S.tap();
+      setFoldDragY(0);           // spring back for an incomplete swipe
+    }
   };
+  useEffect(() => { setFoldFly(false); setFoldDragY(0); }, [game?.handNo]);
   const openRaise = () => {
     const minTo = Math.min(game.currentBet + game.minRaise, hero.bet + hero.chips);
     setRaiseTo(minTo);
@@ -1217,10 +1225,13 @@ export default function App() {
                 <div
                   onPointerDown={onFoldDown} onPointerMove={onFoldMove} onPointerUp={onFoldUp} onPointerCancel={onFoldUp}
                   style={{
-                    display: "flex", gap: 8,
-                    opacity: hero.folded ? 0.35 : 1 - Math.min(0.5, (-foldDragY) / 220),
-                    transform: `translateY(${foldDragY}px)`,
-                    transition: foldGestureRef.current.dragging ? "opacity .1s" : "transform .3s cubic-bezier(.2,.8,.3,1), opacity .35s",
+                    display: "flex", gap: 8, transformOrigin: "center top",
+                    pointerEvents: foldFly ? "none" : "auto",
+                    opacity: foldFly ? 0 : hero.folded ? 0.35 : 1 - Math.min(0.5, (-foldDragY) / 220),
+                    transform: foldFly ? "translateY(-280px) scale(0.45) rotate(-4deg)" : `translateY(${foldDragY}px)`,
+                    transition: foldFly
+                      ? "transform .5s cubic-bezier(.4,0,.55,1), opacity .5s ease-in"
+                      : foldGestureRef.current.dragging ? "opacity .1s" : "transform .3s cubic-bezier(.2,.8,.3,1), opacity .35s",
                     touchAction: isHeroTurn && !hero.folded ? "none" : "auto",
                     cursor: isHeroTurn && !hero.folded ? "grab" : "default",
                   }}>
