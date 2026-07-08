@@ -80,8 +80,15 @@ email use the Send Email hook:
    supabase secrets set KICKER_EMAIL_FROM="Kicker <login@yourdomain.com>"
    supabase secrets set KICKER_PUBLIC_URL=https://kicker.example.com
    ```
-4. In the dashboard: **Auth → Hooks → Send Email** → enable, point it at the
-   `send-email` function URL, and copy the generated signing secret:
+4. In the dashboard: **Auth → Hooks → Send Email** → enable. Choose the **HTTPS**
+   hook type and set the URL to your deployed function (Supabase sends an HTTPS
+   POST here for every auth email):
+   ```
+   https://<YOUR-PROJECT-REF>.supabase.co/functions/v1/send-email
+   ```
+   `<YOUR-PROJECT-REF>` is the subdomain of your `VITE_SUPABASE_URL`
+   (Project Settings → General → Reference ID). Then copy the generated signing
+   secret and store it so the function can verify the request:
    ```
    supabase secrets set SEND_EMAIL_HOOK_SECRET="v1,whsec_xxxxx"
    ```
