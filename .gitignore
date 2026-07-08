@@ -5,3 +5,4 @@ dev-dist
 *.local
 vite.config.js.timestamp-*.mjs
 .write-test
+PLAN.md
