@@ -18,6 +18,16 @@ The app is a PWA: solo play works fully offline after first load and it can be a
 - `server/protocol.js` — shared protocol constants, per-client state redaction
 - `tests/` — engine + protocol + server integration suites
 
+## Accounts (optional)
+
+Kicker supports optional accounts: email confirmation-code sign-in, player
+profiles, friends, and friend-to-friend room invites, backed by Supabase. The
+game itself is unchanged — with no Supabase env vars set, Kicker runs guest-only
+exactly as before. See [docs/ACCOUNTS.md](docs/ACCOUNTS.md) for setup, the
+branded confirmation-email hook, environment variables, and test steps.
+To try changes on an isolated testing subdomain first, see
+[docs/STAGING.md](docs/STAGING.md).
+
 ## License
 
 Source-available: you're welcome to read and study the code, but it may not be reused, redistributed, or commercialized. See [LICENSE](LICENSE).

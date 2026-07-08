@@ -5,3 +5,7 @@ dev-dist
 *.local
 vite.config.js.timestamp-*.mjs
 .write-test
+.env
+.env.local
+.env.*.local
+server-data
