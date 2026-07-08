@@ -15,10 +15,14 @@ const RESEND_COOLDOWN = 30; // seconds
 const CODE_MIN = 6;
 const CODE_MAX = 10;
 
-function Overlay({ children }) {
+function Overlay({ children, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,12,16,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-      <div className="banner-up" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360, maxHeight: "92vh", overflowY: "auto" }}>
+      <div className="banner-up" style={{ position: "relative", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360, maxHeight: "92vh", overflowY: "auto" }}>
+        {onClose && (
+          <button onClick={onClose} aria-label="Close"
+            style={{ position: "absolute", top: 12, right: 12, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", borderRadius: 16, color: C.muted, fontSize: 24, lineHeight: 1, cursor: "pointer", fontFamily: FONT, padding: 0 }}>&times;</button>
+        )}
         {children}
       </div>
     </div>
@@ -92,7 +96,7 @@ export function SignInModal({ onClose, onSignedIn }) {
   };
 
   return (
-    <Overlay>
+    <Overlay onClose={busy ? undefined : onClose}>
       <div style={{ marginBottom: 16 }}><Logo height={30} /></div>
       {step === "email" ? (
         <>

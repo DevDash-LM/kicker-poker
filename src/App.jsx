@@ -612,8 +612,8 @@ export default function App() {
 
   if (screen === "home") {
     return (
-      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 920 : 420, display: "flex", flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "stretch", gap: wide ? 56 : 0, padding: "0 24px", paddingTop: "env(safe-area-inset-top)", position: "relative" }}>
+      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", overflow: wide ? undefined : "hidden" }}>
+        <div style={{ width: "100%", maxWidth: wide ? 920 : 420, height: wide ? undefined : "100dvh", display: "flex", flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "stretch", gap: wide ? 56 : 0, padding: "0 24px", paddingTop: "env(safe-area-inset-top)", position: "relative" }}>
           <button onClick={toggleDark} aria-label="Toggle dark mode"
             style={{ position: "absolute", top: 18, right: 20, background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
             {dark ? "☀︎" : "☾"}
@@ -621,7 +621,7 @@ export default function App() {
           <img src="/logo-mark.png" alt="Kicker" className="brand-mark"
             style={{ position: "absolute", top: 16, left: 22, height: 30, width: "auto" }} />
           {accountOverlays}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 10, minHeight: wide ? "auto" : "56vh" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 10, minHeight: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
               {[{ r: 14, s: 0 }, { r: 13, s: 2 }].map((c, i) => (
                 <div key={i} className="float-card" style={{ "--tilt": `${i ? 7 : -7}deg`, animationDelay: `${i * 0.4}s` }}>
