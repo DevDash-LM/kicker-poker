@@ -1,6 +1,15 @@
 services:
   kicker:
-    build: .
+    build:
+      context: .
+      # Accounts: a .env file dropped next to this compose file is auto-read by
+      # Docker Compose and inlined into the client at build time (Vite VITE_*).
+      # Leave the .env out and the app builds guest-only. The anon key is public
+      # by design (protected by Row Level Security).
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    image: kicker
     restart: unless-stopped
     ports:
       - "127.0.0.1:8787:8787"

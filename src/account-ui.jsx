@@ -1,0 +1,397 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { C, FONT } from "./theme.js";
+import { Btn } from "./components.jsx";
+import { S, buzz } from "./fx/fx.js";
+import { AVATARS } from "../server/protocol.js";
+import * as acct from "./account.js";
+import {
+  authErrorMessage, addFriendMessage, looksLikeEmail,
+  normalizeFriendCode, isValidFriendCode, prettyFriendCode,
+} from "./account-util.js";
+
+const RESEND_COOLDOWN = 30; // seconds
+
+function Overlay({ children }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,12,16,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div className="banner-up" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 22, padding: 22, width: "100%", maxWidth: 360, maxHeight: "92vh", overflowY: "auto" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Label({ children }) {
+  return <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>{children}</div>;
+}
+
+function Field(props) {
+  return <input className="txt" {...props}
+    style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, ...(props.style || {}) }} />;
+}
+
+function Logo({ height = 30 }) {
+  return <img src="/logo-lockup.png" alt="Kicker" className="brand-mark" style={{ height, width: "auto", display: "block", margin: "0 auto" }} />;
+}
+
+function Note({ color, children }) {
+  return <div style={{ fontSize: 13, fontWeight: 600, color: color || C.muted, textAlign: "center", lineHeight: 1.5 }}>{children}</div>;
+}
+
+// --------------------------------------------------------------------------
+// Sign-in: email step -> confirmation-code step
+// --------------------------------------------------------------------------
+export function SignInModal({ onClose, onSignedIn }) {
+  const [step, setStep] = useState("email");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [ok, setOk] = useState(null);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const send = async () => {
+    if (!looksLikeEmail(email)) { setErr("That email doesn’t look right. Please check it."); return; }
+    setBusy(true); setErr(null); setOk(null);
+    try {
+      await acct.requestCode(email);
+      setStep("code"); setCooldown(RESEND_COOLDOWN);
+      setOk(`We sent a code to ${email.trim()}.`);
+    } catch (e) { setErr(authErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const resend = async () => {
+    if (cooldown > 0 || busy) return;
+    setBusy(true); setErr(null);
+    try { await acct.requestCode(email); setCooldown(RESEND_COOLDOWN); setOk("New code sent."); }
+    catch (e) { setErr(authErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const verify = async () => {
+    const c = code.trim();
+    if (c.length < 6) { setErr("Enter the 6-digit code from your email."); return; }
+    setBusy(true); setErr(null);
+    try {
+      const user = await acct.verifyCode(email, c);
+      setOk("Signed in!");
+      S.win?.();
+      onSignedIn?.(user);
+    } catch (e) { setErr(authErrorMessage(e)); setBusy(false); }
+  };
+
+  return (
+    <Overlay>
+      <div style={{ marginBottom: 16 }}><Logo height={30} /></div>
+      {step === "email" ? (
+        <>
+          <div style={{ textAlign: "center", fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Sign in to Kicker</div>
+          <Note>Save your profile, friends, and progress across devices.</Note>
+          <div style={{ marginTop: 18 }}>
+            <Label>Email</Label>
+            <Field type="email" inputMode="email" autoComplete="email" placeholder="you@example.com"
+              value={email} autoCapitalize="off" autoCorrect="off"
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && send()} />
+          </div>
+          {err && <div style={{ marginTop: 12 }}><Note color={C.red}>{err}</Note></div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 18 }}>
+            <Btn kind="accent" onClick={send} disabled={busy}>{busy ? "Sending…" : "Send me a code"}</Btn>
+            <Btn onClick={onClose} disabled={busy}>Keep playing as guest</Btn>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ textAlign: "center", fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Enter your code</div>
+          <Note>Enter the code we sent to {email.trim()}.</Note>
+          <div style={{ marginTop: 18 }}>
+            <Label>Confirmation code</Label>
+            <Field type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="123456"
+              value={code} maxLength={6}
+              onChange={e => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+              onKeyDown={e => e.key === "Enter" && verify()}
+              style={{ letterSpacing: ".4em", fontWeight: 800, textAlign: "center", fontSize: 22 }} />
+          </div>
+          {ok && !err && <div style={{ marginTop: 10 }}><Note color={C.green}>{ok}</Note></div>}
+          {err && <div style={{ marginTop: 10 }}><Note color={C.red}>{err}</Note></div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+            <Btn kind="accent" onClick={verify} disabled={busy || code.length < 6}>{busy ? "Signing in…" : "Sign in"}</Btn>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => { setStep("email"); setErr(null); setOk(null); setCode(""); }} disabled={busy} style={{ fontSize: 13, padding: "11px 0" }}>Change email</Btn>
+              <Btn onClick={resend} disabled={busy || cooldown > 0} style={{ fontSize: 13, padding: "11px 0" }}>
+                {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+              </Btn>
+            </div>
+          </div>
+        </>
+      )}
+    </Overlay>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Account screen: profile + friends + requests
+// --------------------------------------------------------------------------
+export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }) {
+  const [name, setName] = useState(profile?.display_name || "");
+  const [emoji, setEmoji] = useState(profile?.emoji || "🙂");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const [friends, setFriends] = useState([]);
+  const [incoming, setIncoming] = useState([]);
+  const [outgoing, setOutgoing] = useState([]);
+  const [loadingFriends, setLoadingFriends] = useState(true);
+
+  const [addCode, setAddCode] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const [addMsg, setAddMsg] = useState(null);
+
+  const refresh = useCallback(async () => {
+    setLoadingFriends(true);
+    try {
+      const [fr, rq] = await Promise.all([acct.listFriends(), acct.listRequests()]);
+      setFriends(fr); setIncoming(rq.incoming); setOutgoing(rq.outgoing);
+    } catch { /* leave lists as-is; network hiccup */ }
+    finally { setLoadingFriends(false); }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const dirty = name.trim() !== (profile?.display_name || "") || emoji !== (profile?.emoji || "🙂");
+  const saveProfile = async () => {
+    setSavingProfile(true); setProfileMsg(null);
+    try {
+      const p = await acct.updateProfile({ display_name: name, emoji });
+      onProfileChange?.(p);
+      setProfileMsg({ ok: true, text: "Saved." });
+    } catch { setProfileMsg({ ok: false, text: "Couldn’t save. Try again." }); }
+    finally { setSavingProfile(false); }
+  };
+
+  const copyCode = async () => {
+    try { await navigator.clipboard.writeText(profile.friend_code); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
+
+  const addFriend = async () => {
+    if (!isValidFriendCode(addCode)) { setAddMsg({ ok: false, text: "That code doesn’t look right." }); return; }
+    setAddBusy(true); setAddMsg(null);
+    try {
+      const status = await acct.addFriendByCode(normalizeFriendCode(addCode));
+      const m = addFriendMessage(status);
+      setAddMsg({ ok: m.ok, text: m.message });
+      if (m.ok) { setAddCode(""); refresh(); }
+    } catch { setAddMsg({ ok: false, text: "Couldn’t add that friend. Try again." }); }
+    finally { setAddBusy(false); }
+  };
+
+  const respond = async (id, accept) => {
+    try {
+      if (accept) await acct.acceptRequest(id); else await acct.declineRequest(id);
+      refresh();
+    } catch { /* ignore */ }
+  };
+
+  const signOut = async () => { await acct.signOut(); onSignedOut?.(); };
+
+  return (
+    <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", position: "fixed", inset: 0, zIndex: 150, overflowY: "auto" }}>
+      <div style={{ width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Back</button>
+          <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Account</div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 22, paddingTop: 6, paddingBottom: "calc(28px + env(safe-area-inset-bottom))" }}>
+          {/* Profile */}
+          <div>
+            <Label>Your profile</Label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              {AVATARS.map(e => (
+                <button key={e} className="btn" onClick={() => { S.tap(); setEmoji(e); }}
+                  style={{ width: 40, height: 40, borderRadius: 20, fontSize: 19, cursor: "pointer", border: `2px solid ${emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
+              ))}
+            </div>
+            <Field value={name} maxLength={14} placeholder="Display name"
+              onChange={e => setName(e.target.value)} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+              <Btn kind="primary" onClick={saveProfile} disabled={!dirty || savingProfile} style={{ flex: 1 }}>
+                {savingProfile ? "Saving…" : "Save profile"}
+              </Btn>
+              {profileMsg && <span style={{ fontSize: 13, fontWeight: 700, color: profileMsg.ok ? C.green : C.red }}>{profileMsg.text}</span>}
+            </div>
+          </div>
+
+          {/* Friend code */}
+          <div>
+            <Label>Your friend code</Label>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+              <span style={{ flex: 1, fontSize: 20, fontWeight: 800, letterSpacing: ".14em", color: C.ink, fontVariantNumeric: "tabular-nums" }}>{prettyFriendCode(profile.friend_code)}</span>
+              <button className="btn" onClick={copyCode}
+                style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "8px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: copied ? C.green : C.ink, cursor: "pointer" }}>
+                {copied ? "Copied ✓" : "Copy"}
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>Share this code so friends can add you.</div>
+          </div>
+
+          {/* Add a friend */}
+          <div>
+            <Label>Add a friend</Label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Field value={addCode} placeholder="Friend code" autoCapitalize="characters" autoCorrect="off"
+                onChange={e => setAddCode(normalizeFriendCode(e.target.value))}
+                onKeyDown={e => e.key === "Enter" && addFriend()}
+                style={{ letterSpacing: ".14em", fontWeight: 700, flex: 1, minWidth: 0 }} />
+              <Btn kind="accent" onClick={addFriend} disabled={addBusy || !addCode} style={{ flex: "0 0 92px" }}>{addBusy ? "…" : "Add"}</Btn>
+            </div>
+            {addMsg && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: addMsg.ok ? C.green : C.red }}>{addMsg.text}</div>}
+          </div>
+
+          {/* Incoming requests */}
+          {incoming.length > 0 && (
+            <div>
+              <Label>Friend requests</Label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {incoming.map(r => (
+                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+                    <span style={{ fontSize: 20 }}>{r.profile?.emoji || "🙂"}</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{r.profile?.display_name || "Player"}</span>
+                    <button className="btn" onClick={() => respond(r.id, true)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 12px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", cursor: "pointer" }}>Accept</button>
+                    <button className="btn" onClick={() => respond(r.id, false)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 12px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.muted, cursor: "pointer" }}>Decline</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Friends list */}
+          <div>
+            <Label>Friends</Label>
+            {loadingFriends ? (
+              <Note>Loading…</Note>
+            ) : friends.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "24px 16px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 16 }}>
+                <img src="/logo-mark.png" alt="" className="brand-mark" style={{ height: 30, opacity: 0.5, margin: "0 auto 10px" }} />
+                <Note>No friends yet. Share your friend code to connect.</Note>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {friends.map(f => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+                    <span style={{ fontSize: 20 }}>{f.emoji}</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{f.display_name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {outgoing.length > 0 && (
+              <div style={{ fontSize: 12, color: C.faint, marginTop: 8 }}>
+                {outgoing.length} pending request{outgoing.length > 1 ? "s" : ""} sent.
+              </div>
+            )}
+          </div>
+
+          <Btn kind="danger" onClick={signOut}>Sign out</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Invite friends (inside the room lobby, host + signed-in only)
+// --------------------------------------------------------------------------
+export function InviteFriends({ roomCode }) {
+  const [friends, setFriends] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    acct.listFriends().then(fr => { if (live) { setFriends(fr); setLoading(false); } }).catch(() => live && setLoading(false));
+    return () => { live = false; };
+  }, []);
+
+  const toggle = id => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); setSent(false); return n; });
+
+  const invite = async () => {
+    if (selected.size === 0) return;
+    setBusy(true);
+    try { await acct.createInvites(roomCode, [...selected]); setSent(true); }
+    catch { /* ignore */ }
+    finally { setBusy(false); }
+  };
+
+  if (loading) return <Note>Loading friends…</Note>;
+  if (friends.length === 0) return <div style={{ fontSize: 13, color: C.faint, lineHeight: 1.5 }}>Add friends from your account to invite them here.</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {friends.map(f => {
+        const on = selected.has(f.id);
+        return (
+          <button key={f.id} className="btn" onClick={() => { S.tap(); buzz(6); toggle(f.id); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: on ? `${C.accent}14` : C.surface, border: `1px solid ${on ? C.accent : C.line}`, borderRadius: 14, cursor: "pointer", fontFamily: FONT, textAlign: "left" }}>
+            <span style={{ fontSize: 20 }}>{f.emoji}</span>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{f.display_name}</span>
+            <span style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${on ? C.accent : C.faint}`, background: on ? C.accent : "transparent", color: "#fff", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{on ? "✓" : ""}</span>
+          </button>
+        );
+      })}
+      <Btn kind="accent" onClick={invite} disabled={busy || selected.size === 0}>
+        {sent ? "Invites sent ✓" : busy ? "Sending…" : selected.size ? `Invite ${selected.size} friend${selected.size > 1 ? "s" : ""}` : "Select friends to invite"}
+      </Btn>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Incoming room invites (shown on the "Play online" screen)
+// --------------------------------------------------------------------------
+export function IncomingInvites({ onJoin }) {
+  const [invites, setInvites] = useState([]);
+
+  const load = useCallback(async () => {
+    try { setInvites(await acct.listInvites()); } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 15000); // light poll so new invites appear
+    return () => clearInterval(t);
+  }, [load]);
+
+  const join = async inv => { try { await acct.dismissInvite(inv.id); } catch {} onJoin?.(inv.roomCode); };
+  const dismiss = async inv => { try { await acct.dismissInvite(inv.id); } catch {} setInvites(list => list.filter(i => i.id !== inv.id)); };
+
+  if (invites.length === 0) return null;
+  return (
+    <div>
+      <Label>Room invites</Label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {invites.map(inv => (
+          <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.accent}`, borderRadius: 14 }}>
+            <span style={{ fontSize: 20 }}>{inv.from?.emoji || "🙂"}</span>
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink }}>
+              {inv.from?.display_name || "A friend"} invited you
+              <span style={{ color: C.muted, fontWeight: 600 }}> · {inv.roomCode}</span>
+            </span>
+            <button className="btn" onClick={() => join(inv)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 14px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", cursor: "pointer" }}>Join</button>
+            <button className="btn" onClick={() => dismiss(inv)} aria-label="Dismiss" style={{ fontFamily: FONT, fontSize: 15, fontWeight: 700, padding: "6px 10px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.muted, cursor: "pointer" }}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

@@ -10,6 +10,9 @@ import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
 import * as store from "./storage.js";
 import { Net, loadProfile, saveProfile } from "./net.js";
 import { REACTIONS, AVATARS } from "../server/protocol.js";
+import * as acct from "./account.js";
+import { accountsEnabled } from "./account.js";
+import { SignInModal, AccountScreen, InviteFriends, IncomingInvites } from "./account-ui.jsx";
 
 const BLIND_PRESETS = [[25, 50], [50, 100], [100, 200], [250, 500]];
 const STACK_PRESETS = [5000, 10000, 25000, 50000];
@@ -133,6 +136,10 @@ export default function App() {
   const [conn, setConn] = useState("off");
   const [room, setRoom] = useState(null);
   const [profile, setProfile] = useState(loadProfile);
+  const [authUser, setAuthUser] = useState(null);
+  const [accProfile, setAccProfile] = useState(null);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [joinCode, setJoinCode] = useState(() => { try { return new URLSearchParams(location.search).get("room")?.toUpperCase().replace(/[^A-Z]/g, "") || ""; } catch { return ""; } });
   const [netErr, setNetErr] = useState(null);
   const [reactions, setReactions] = useState([]);
@@ -171,6 +178,26 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (joinCode) setScreen("online"); }, []);
+
+  // Account layer: load the signed-in user + profile and keep them in sync.
+  // Guarded by accountsEnabled so the app runs guest-only when Supabase isn't
+  // configured. Signing in also prefills the online name/avatar from the profile.
+  useEffect(() => {
+    if (!accountsEnabled) return;
+    let live = true;
+    const hydrate = async (u) => {
+      if (!live) return;
+      setAuthUser(u);
+      if (!u) { setAccProfile(null); return; }
+      try {
+        const p = await acct.loadProfile();
+        if (live && p) { setAccProfile(p); setProfile(pr => ({ ...pr, name: p.display_name, emoji: p.emoji })); }
+      } catch {}
+    };
+    acct.getUser().then(hydrate).catch(() => {});
+    const unsub = acct.onAuth(hydrate);
+    return () => { live = false; unsub(); };
+  }, []);
 
   const toggleDark = () => { const d = !dark; setDark(d); applyTheme(d); S.tap(); buzz(6); };
   const toggleMute = () => {
@@ -251,6 +278,14 @@ export default function App() {
     const code = joinCode.trim().toUpperCase();
     if (code.length !== 5) { setNetErr("Room codes are 5 letters."); return; }
     setNetErr(null); saveProfile(profile);
+    sendWhenReady({ type: "join", code, profile });
+  };
+  // Join directly from a friend's room invite, reusing the existing room-code flow.
+  const joinRoomCode = (raw) => {
+    const code = String(raw || "").toUpperCase().replace(/[^A-Z]/g, "");
+    if (code.length !== 5) return;
+    setNetErr(null); saveProfile(profile);
+    setJoinCode(code); setScreen("online");
     sendWhenReady({ type: "join", code, profile });
   };
 
@@ -557,6 +592,24 @@ export default function App() {
 
   const openHistory = from => { histFrom.current = from; setExpandedHand(null); setScreen("history"); };
 
+  const onSignedIn = async (u) => {
+    setSignInOpen(false); setAuthUser(u);
+    try {
+      const p = await acct.loadProfile();
+      if (p) { setAccProfile(p); setProfile(pr => ({ ...pr, name: p.display_name, emoji: p.emoji })); }
+    } catch {}
+  };
+  const onSignedOut = () => { setAccountOpen(false); setAccProfile(null); setAuthUser(null); };
+  const accountOverlays = accountsEnabled ? (
+    <>
+      {signInOpen && <SignInModal onClose={() => setSignInOpen(false)} onSignedIn={onSignedIn} />}
+      {accountOpen && accProfile && (
+        <AccountScreen profile={accProfile} onClose={() => setAccountOpen(false)}
+          onProfileChange={setAccProfile} onSignedOut={onSignedOut} />
+      )}
+    </>
+  ) : null;
+
   if (screen === "home") {
     return (
       <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
@@ -567,6 +620,7 @@ export default function App() {
           </button>
           <img src="/logo-mark.png" alt="Kicker" className="brand-mark"
             style={{ position: "absolute", top: 16, left: 22, height: 30, width: "auto" }} />
+          {accountOverlays}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 10, minHeight: wide ? "auto" : "56vh" }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
               {[{ r: 14, s: 0 }, { r: 13, s: 2 }].map((c, i) => (
@@ -600,6 +654,9 @@ export default function App() {
               </>
             )}
             <Btn kind="accent" onClick={() => { setNetErr(null); setScreen("online"); }}>Play online</Btn>
+            {accountsEnabled && (authUser
+              ? <Btn onClick={() => setAccountOpen(true)}>{accProfile ? `Account · ${accProfile.display_name}` : "Account"}</Btn>
+              : <Btn onClick={() => setSignInOpen(true)}>Sign in to Kicker</Btn>)}
             <div style={{ display: "flex", gap: 10 }}>
               <Btn onClick={() => openHistory("home")} style={{ fontSize: 14, padding: "12px 0" }}>Hand history</Btn>
               <Btn onClick={() => setScreen("stats")} style={{ fontSize: 14, padding: "12px 0" }}>Stats</Btn>
@@ -718,8 +775,18 @@ export default function App() {
                 You'll get a 4-letter code and a link to share. Blinds, stacks, and AI fill can be changed in the lobby.
               </div>
             </div>
+            {accountsEnabled && authUser && (
+              <div style={{ gridColumn: "1 / -1" }}><IncomingInvites onJoin={joinRoomCode} /></div>
+            )}
+            {accountsEnabled && !authUser && (
+              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+                <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>Sign in to save your profile and invite friends.</span>
+                <Btn kind="accent" onClick={() => setSignInOpen(true)} style={{ flex: "0 0 84px" }}>Sign in</Btn>
+              </div>
+            )}
             {netErr && <div style={{ gridColumn: "1 / -1", color: C.red, fontSize: 13, fontWeight: 600, textAlign: "center" }}>{netErr}</div>}
             {conn === "connecting" && <div style={{ gridColumn: "1 / -1", color: C.muted, fontSize: 13, textAlign: "center" }}>Connecting…</div>}
+            {accountOverlays}
           </div>
         </div>
       </div>
@@ -807,6 +874,15 @@ export default function App() {
                   <OptionRow options={[true, false]} value={room.config.fillAI}
                     onChange={fillAI => sendCfg({ fillAI })} render={v => (v ? "Yes" : "No")} />
                 </div>
+                {accountsEnabled && authUser && (
+                  <div>
+                    <SetupLabel>Invite friends</SetupLabel>
+                    <InviteFriends roomCode={room.code} />
+                  </div>
+                )}
+                {accountsEnabled && !authUser && (
+                  <div style={{ fontSize: 12, color: C.faint, lineHeight: 1.5 }}>Sign in from the home screen to invite friends to this table.</div>
+                )}
               </div>
             ) : (
               <div style={{ fontSize: 13, color: C.muted, textAlign: "center" }}>
@@ -818,6 +894,7 @@ export default function App() {
           <div style={{ display: "flex", gap: 8, padding: "12px 0", paddingBottom: "calc(28px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 480 : "none", margin: wide ? "0 auto" : undefined }}>
             <Btn onClick={() => { netRef.current?.send({ type: "ready", ready: !me?.ready }); }}>{me?.ready ? "Not ready" : "I'm ready"}</Btn>
             {isHost && <Btn kind="accent" disabled={!room.canStart} onClick={() => netRef.current?.send({ type: "start" })} style={{ flex: 2 }}>Start game</Btn>}
+            {accountOverlays}
           </div>
         </div>
       </div>
