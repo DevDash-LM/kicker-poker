@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
-    const logoUrl = PUBLIC_URL ? `${PUBLIC_URL}/logo-lockup.png` : "";
+    const logoUrl = PUBLIC_URL ? `${PUBLIC_URL}/logo-lockup-white.png` : "";
     await sendViaResend(
       email,
       subjectLine(),
