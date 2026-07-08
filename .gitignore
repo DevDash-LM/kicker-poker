@@ -11,3 +11,5 @@ vite.config.js.timestamp-*.mjs
 server-data
 .env.example
 docs/ACCOUNTS.md
+.env.example
+docs/ACCOUNTS.md
