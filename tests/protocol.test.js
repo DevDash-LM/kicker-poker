@@ -69,6 +69,14 @@ describe("input validation", () => {
     expect(validConfig({ sb: 50, bb: 100, stack: 10000 }).tournament).toBe(false);
     expect(validConfig(null).tournament).toBe(false);
   });
+  it("accepts custom stacks in range and rejects out-of-range ones", () => {
+    expect(validConfig({ sb: 50, bb: 100, stack: 3333 }).stack).toBe(3333);
+    expect(validConfig({ sb: 50, bb: 100, stack: 500 }).stack).toBe(500);
+    expect(validConfig({ sb: 50, bb: 100, stack: 1000000 }).stack).toBe(1000000);
+    expect(validConfig({ sb: 50, bb: 100, stack: 123 }).stack).toBe(10000);      // below min -> default
+    expect(validConfig({ sb: 50, bb: 100, stack: 2000000 }).stack).toBe(10000);  // above max -> default
+    expect(validConfig({ sb: 50, bb: 100, stack: 100.5 }).stack).toBe(10000);    // non-integer -> default
+  });
 });
 
 describe("room codes (makeCode)", () => {

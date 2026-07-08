@@ -76,13 +76,12 @@ export function validAction(a) {
 
 export function validConfig(c) {
   const BLINDS = [[25, 50], [50, 100], [100, 200], [250, 500]];
-  const STACKS = [5000, 10000, 25000, 50000];
   const def = { sb: 50, bb: 100, stack: 10000, fillAI: false, tournament: false };
   if (!c || typeof c !== "object") return def;
   const pair = BLINDS.find(([sb, bb]) => sb === c.sb && bb === c.bb) || [def.sb, def.bb];
   return {
     sb: pair[0], bb: pair[1],
-    stack: STACKS.includes(c.stack) ? c.stack : def.stack,
+    stack: Number.isInteger(c.stack) && c.stack >= 500 && c.stack <= 1000000 ? c.stack : def.stack,
     fillAI: !!c.fillAI,
     tournament: !!c.tournament,
   };

@@ -111,6 +111,7 @@ function StatRow({ label, value, color }) {
 
 const netColor = n => (n > 0 ? C.green : n < 0 ? C.red : C.muted);
 const netStr = n => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : "0");
+const ordinal = n => { const t = n % 100; return `${n}${t >= 11 && t <= 13 ? "th" : ["th","st","nd","rd"][n % 10] || "th"}`; };
 
 export default function App() {
   const [screen, setScreen] = useState("home");
@@ -269,13 +270,14 @@ export default function App() {
 
   const newTable = (cfg) => {
     const botNames = pickNames(cfg.ai);
+    const stack = Math.max(500, Math.min(1000000, cfg.stack || 10000));
     const players = [
-      { name: "You", emoji: "🙂", ai: false, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
-      ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: cfg.stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
+      { name: "You", emoji: "🙂", ai: false, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
+      ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
     ];
     const base = {
       players, dealer: secureInt(players.length), handNo: 0, board: [], deck: [], stage: "hand",
-      blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: cfg.stack, tournament: !!cfg.tournament,
+      blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: stack, tournament: !!cfg.tournament,
     };
     setSession({ hands: 0, won: 0, biggest: 0, rebuys: 0 });
     setGame(startHand(base));
@@ -463,6 +465,27 @@ export default function App() {
     store.saveStats(st);
   }, [game?.stage]);
 
+  // Record a tournament result once, when the hero is eliminated or crowned
+  // champion. statsRecorded is written onto the game so it survives a reload of
+  // a finished solo table and can't be double-counted.
+  useEffect(() => {
+    if (!game || !game.tournament || game.stage !== "over" || game.statsRecorded) return;
+    const heroName = game.players[0].name;
+    const heroChips = game.players[0].chips;
+    const mpChamp = mode === "mp" && !!game.champion;
+    const heroWon = mpChamp ? game.champion === heroName : (mode !== "mp" && heroChips > 0 && aliveCount(game) <= 1);
+    const heroBusted = heroChips === 0;
+    if (!(heroWon || heroBusted || mpChamp)) return;
+    // Finish place: 1 for a win, otherwise everyone still holding chips outlasted the hero.
+    const place = heroWon ? 1 : aliveCount(game) + 1;
+    const st = store.loadStats();
+    st.tourneys = (st.tourneys || 0) + 1;
+    st.tourneyWins = (st.tourneyWins || 0) + (heroWon ? 1 : 0);
+    st.bestFinish = st.bestFinish ? Math.min(st.bestFinish, place) : place;
+    store.saveStats(st);
+    setGame(g => (g && g.stage === "over" ? { ...g, statsRecorded: true } : g));
+  }, [game?.stage, game?.champion, mode]);
+
   const skipRef = useRef(false);
   const skipHand = () => {
     S.tap(); buzz(8);
@@ -614,6 +637,12 @@ export default function App() {
               <SetupLabel>Starting stack</SetupLabel>
               <OptionRow options={STACK_PRESETS} value={cfg.stack}
                 onChange={stack => upd({ stack })} render={v => fmt(v)} />
+              <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
+                value={STACK_PRESETS.includes(cfg.stack) ? "" : cfg.stack}
+                min={500} max={1000000} step={500}
+                onChange={e => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) upd({ stack: v }); }}
+                onBlur={e => { const v = parseInt(e.target.value, 10); upd({ stack: Number.isFinite(v) ? Math.max(500, Math.min(1000000, v)) : 10000 }); }}
+                style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
               <div style={{ fontSize: 12, color: C.faint, marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
                 {Math.round(cfg.stack / cfg.bb)} big blinds deep
               </div>
@@ -758,6 +787,12 @@ export default function App() {
                   <SetupLabel>Starting stack</SetupLabel>
                   <OptionRow options={STACK_PRESETS} value={room.config.stack}
                     onChange={stack => sendCfg({ stack })} render={v => fmt(v)} />
+                  <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
+                    value={STACK_PRESETS.includes(room.config.stack) ? "" : room.config.stack}
+                    min={500} max={1000000} step={500}
+                    onChange={e => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) sendCfg({ stack: v }); }}
+                    onBlur={e => { const v = parseInt(e.target.value, 10); sendCfg({ stack: Number.isFinite(v) ? Math.max(500, Math.min(1000000, v)) : 10000 }); }}
+                    style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
                 </div>
                 <div>
                   <SetupLabel>Fill empty seats with AI</SetupLabel>
@@ -861,6 +896,12 @@ export default function App() {
             <StatRow label="Net chips" value={netStr(st.net)} color={netColor(st.net)} />
             <StatRow label="Biggest pot won" value={fmt(st.biggestPot)} />
             <StatRow label="Rebuys" value={st.rebuys} />
+            <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
+              <SetupLabel>Tournaments</SetupLabel>
+            </div>
+            <StatRow label="Tournaments played" value={st.tourneys} />
+            <StatRow label="Tournaments won" value={`${st.tourneyWins}${st.tourneys ? ` (${Math.round((st.tourneyWins / st.tourneys) * 100)}%)` : ""}`} color={st.tourneyWins ? C.green : undefined} />
+            <StatRow label="Best finish" value={st.bestFinish ? ordinal(st.bestFinish) : "—"} />
           </div>
           <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
             <Btn kind="danger" onClick={() => { store.resetStats(); setScreen("home"); setTimeout(() => setScreen("stats"), 0); }} style={{ width: "100%" }}>Reset stats</Btn>
