@@ -10,6 +10,15 @@ export async function getUser() {
   return data?.user || null;
 }
 
+// Current access token, so the game server can verify signed-in identity on
+// room create/join (see server/auth.js). Null when accounts are off or nobody
+// is signed in.
+export async function getAccessToken() {
+  if (!sb) return null;
+  const { data } = await sb.auth.getSession();
+  return data?.session?.access_token || null;
+}
+
 // Subscribe to sign-in / sign-out. Returns an unsubscribe fn.
 export function onAuth(cb) {
   if (!sb) return () => {};

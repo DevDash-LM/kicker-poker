@@ -25,6 +25,12 @@ the account layer can crash the game.
   invitees see incoming invites on the *Play online* screen and join with the
   existing room-code flow.
 - Signed-in identity (name + emoji) is reused for online play and invites.
+- **Verified table identity** — on room create/join the client attaches its
+  Supabase access token; the game server verifies it (`server/auth.js`) and
+  pins the member's name/emoji to the **account profile**, ignoring whatever
+  the client typed. Verified members carry an `account: true` flag in room
+  snapshots and show a small ✓ badge in the lobby. Any verification failure
+  falls back to guest — guest play is untouched.
 
 ### Files
 
@@ -37,7 +43,8 @@ the account layer can crash the game.
 | `src/account.js` | Account API: auth, profile, friends, invites. |
 | `src/account-util.js` | Pure helpers (friend-code formatting, friendly error messages). Unit-tested. |
 | `src/account-ui.jsx` | `SignInModal`, `AccountScreen`, `InviteFriends`, `IncomingInvites`. |
-| `src/App.jsx` | Wiring only — home entry, online invites, lobby invite section. |
+| `src/App.jsx` | Wiring only — home entry, online invites, lobby invite section, auth token on create/join. |
+| `server/auth.js` | Game-server-side token verification: confirms the access token with Supabase and reads the account profile. Fail-open to guest. |
 | `tests/account.test.js` | Tests for the email template and account utils. |
 
 ---
@@ -205,6 +212,21 @@ alongside the existing engine/server suites.
   in Supabase Edge Function secrets.
 - Guest data stays entirely local (localStorage) as before.
 
+**Game server (table codes)**
+
+- A member is only marked as a signed-in account after the server confirms the
+  access token with Supabase (`GET /auth/v1/user`) and reads the profile row.
+  The client-typed name/emoji are **ignored** for verified members, so nobody
+  can wear another account's identity at the table — the ✓ badge and the name
+  behind it always come from the verified profile.
+- Verification **fails open to guest**, never to an error: forged/expired
+  tokens, timeouts (3.5s), or a server without `SUPABASE_URL` /
+  `SUPABASE_ANON_KEY` (see `docker-compose.yml`) all mean "treat as guest".
+  Old clients that send no token behave exactly as before.
+- The room session itself is still keyed by the local `deviceId` (reconnects,
+  turn ownership, host powers). The account layer adds *display identity and
+  its verification* on top; it does not replace the device session.
+
 ---
 
 ## Known limitations / intentionally deferred
@@ -220,3 +242,12 @@ alongside the existing engine/server suites.
 - Email delivery, hook signing, and OTP settings require the external Supabase +
   Resend configuration above; those cannot be exercised by the offline test
   suite and must be verified against a real project.
+- Account identity at the table is **display-level only**: game actions, seats,
+  and host powers stay keyed to `deviceId`. If accounts ever gate anything
+  sensitive (persistent chips, rankings), re-key sessions to the verified
+  account id and re-verify tokens on reconnect, not just on create/join.
+- The token is verified once at create/join; a session revoked mid-game keeps
+  its badge until the room ends. Acceptable for display identity.
+- Verification adds one Supabase round-trip to create/join (hard 3.5s cap on
+  the game server); the profile is read with the player's own token under RLS,
+  so the game server needs no service-role key.

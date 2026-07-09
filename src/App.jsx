@@ -281,23 +281,33 @@ export default function App() {
       }
     }, 7000);
   };
-  const createRoom = () => {
-    setNetErr(null); saveProfile(profile);
-    sendWhenReady({ type: "create", profile, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false, tournament: !!settings.tournament } });
+  // Signed-in players attach their Supabase access token so the server can
+  // verify their account and pin the table identity to the account profile
+  // (see server/auth.js). Guests send none — their typed profile is used as-is.
+  const authToken = async () => {
+    if (!accountsEnabled || !authUser) return null;
+    try { return await acct.getAccessToken(); } catch { return null; }
   };
-  const joinRoom = () => {
+  const createRoom = async () => {
+    setNetErr(null); saveProfile(profile);
+    const auth = await authToken();
+    sendWhenReady({ type: "create", profile, auth, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false, tournament: !!settings.tournament } });
+  };
+  const joinRoom = async () => {
     const code = joinCode.trim().toUpperCase();
     if (code.length !== 5) { setNetErr("Room codes are 5 letters."); return; }
     setNetErr(null); saveProfile(profile);
-    sendWhenReady({ type: "join", code, profile });
+    const auth = await authToken();
+    sendWhenReady({ type: "join", code, profile, auth });
   };
   // Join directly from a friend's room invite, reusing the existing room-code flow.
-  const joinRoomCode = (raw) => {
+  const joinRoomCode = async (raw) => {
     const code = String(raw || "").toUpperCase().replace(/[^A-Z]/g, "");
     if (code.length !== 5) return;
     setNetErr(null); saveProfile(profile);
     setJoinCode(code); setScreen("online");
-    sendWhenReady({ type: "join", code, profile });
+    const auth = await authToken();
+    sendWhenReady({ type: "join", code, profile, auth });
   };
 
   const recordAction = (g, idx, a) => {
@@ -770,21 +780,35 @@ export default function App() {
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Play online</div>
           </div>
           <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
-            <div>
-              <SetupLabel>Your name</SetupLabel>
-              <input className="txt" value={profile.name} maxLength={14} placeholder="Guest"
-                onChange={e => setProfile(pr => ({ ...pr, name: e.target.value }))}
-                style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink }} />
-            </div>
-            <div>
-              <SetupLabel>Avatar</SetupLabel>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {AVATARS.map(e => (
-                  <button key={e} className="btn" onClick={() => { S.tap(); setProfile(pr => ({ ...pr, emoji: e })); }}
-                    style={{ width: 44, height: 44, borderRadius: 22, fontSize: 20, cursor: "pointer", border: `2px solid ${profile.emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
-                ))}
+            {accountsEnabled && authUser && accProfile ? (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <SetupLabel>Playing as</SetupLabel>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+                  <span style={{ fontSize: 20 }}>{accProfile.emoji}</span>
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{accProfile.display_name}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 7, padding: "2px 7px", letterSpacing: ".04em" }}>ACCOUNT</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>You'll appear at the table with your account name and avatar. Edit them in Account.</div>
               </div>
-            </div>
+            ) : (
+              <>
+                <div>
+                  <SetupLabel>Your name</SetupLabel>
+                  <input className="txt" value={profile.name} maxLength={14} placeholder="Guest"
+                    onChange={e => setProfile(pr => ({ ...pr, name: e.target.value }))}
+                    style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink }} />
+                </div>
+                <div>
+                  <SetupLabel>Avatar</SetupLabel>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {AVATARS.map(e => (
+                      <button key={e} className="btn" onClick={() => { S.tap(); setProfile(pr => ({ ...pr, emoji: e })); }}
+                        style={{ width: 44, height: 44, borderRadius: 22, fontSize: 20, cursor: "pointer", border: `2px solid ${profile.emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
             <div>
               <SetupLabel>Join a table</SetupLabel>
               <div style={{ display: "flex", gap: 8 }}>
@@ -860,6 +884,7 @@ export default function App() {
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, flex: 1 }}>
                     {mm.name}{mm.you ? " (you)" : ""}
                     {mm.host && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, background: C.ink, color: C.onPrim, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>HOST</span>}
+                    {mm.account && <span title="Signed-in Kicker account" style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>✓</span>}
                   </span>
                   <span className="conn-dot" style={{ background: mm.connected ? C.green : C.gold }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: mm.ready ? C.green : C.faint, width: 44, textAlign: "right" }}>{mm.ready ? "Ready" : "…"}</span>
