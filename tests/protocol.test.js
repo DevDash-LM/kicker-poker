@@ -61,8 +61,8 @@ describe("input validation", () => {
     expect(validAction({ type: "fold", extra: 1 })).toEqual({ type: "fold" });
   });
   it("clamps configs to known presets", () => {
-    expect(validConfig({ sb: 1, bb: 7, stack: 123, fillAI: "yes" })).toEqual({ sb: 50, bb: 100, stack: 10000, fillAI: true, tournament: false });
-    expect(validConfig({ sb: 250, bb: 500, stack: 50000, fillAI: false })).toEqual({ sb: 250, bb: 500, stack: 50000, fillAI: false, tournament: false });
+    expect(validConfig({ sb: 1, bb: 7, stack: 123, fillAI: "yes" })).toEqual({ sb: 50, bb: 100, stack: 10000, fillAI: true, tournament: false, bankroll: false });
+    expect(validConfig({ sb: 250, bb: 500, stack: 50000, fillAI: false })).toEqual({ sb: 250, bb: 500, stack: 50000, fillAI: false, tournament: false, bankroll: false });
   });
   it("accepts the tournament flag", () => {
     expect(validConfig({ sb: 50, bb: 100, stack: 10000, tournament: true }).tournament).toBe(true);

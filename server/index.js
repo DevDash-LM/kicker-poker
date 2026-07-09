@@ -9,12 +9,46 @@ import {
   makeCode, sanitizeName, sanitizeAvatar, mkPlayer, redactFor, validAction, validConfig,
 } from "./protocol.js";
 import { verifyAccount as defaultVerifyAccount } from "./auth.js";
+import { mpBuyIn as defaultMpBuyIn, mpSettle as defaultMpSettle, bankrollConfigured as defaultBankrollConfigured } from "./wallet.js";
 
-// `verifyAccount` is injectable so tests can exercise the account path without
-// a live Supabase project.
-export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount } = {}) {
+// `verifyAccount` / `walletOps` are injectable so tests can exercise the
+// account and bankroll paths without a live Supabase project.
+export function createServer(port = 8787, {
+  verifyAccount = defaultVerifyAccount,
+  walletOps = { buyIn: defaultMpBuyIn, settle: defaultMpSettle, configured: defaultBankrollConfigured },
+} = {}) {
   const rooms = new Map();
   const memberOf = new Map();
+
+  // ---- bankroll settlement --------------------------------------------------
+  // Settlement must never be lost or doubled: the per-member `bankrollSettled`
+  // flag stops repeats locally, mp_settle() is idempotent server-side, and a
+  // failed call is queued and retried until the bank answers.
+  const pendingSettles = [];
+  const settleTimer = setInterval(async () => {
+    for (const p of pendingSettles.splice(0)) {
+      const r = await walletOps.settle(p.sid, p.amt).catch(() => null);
+      if (!r) pendingSettles.push(p);
+    }
+  }, 30000);
+
+  function settleMember(room, m, chips) {
+    if (!m.bankrollSession || m.bankrollSettled) return;
+    m.bankrollSettled = true;
+    const sid = m.bankrollSession;
+    // Prefer the live in-hand stack (committed bets are forfeited, as in any
+    // cash game); fall back to the last hand-end sync.
+    let amt = chips;
+    if (amt == null) {
+      const seatChips = room.status === "playing" && room.game?.players?.[m.seat] && !room.game.players[m.seat].ai
+        ? room.game.players[m.seat].chips : null;
+      amt = seatChips ?? m.chips ?? 0;
+    }
+    amt = Math.max(0, Math.floor(amt));
+    walletOps.settle(sid, amt)
+      .then(r => { if (!r) pendingSettles.push({ sid, amt }); })
+      .catch(() => pendingSettles.push({ sid, amt }));
+  }
 
   const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist");
   const MIME = {
@@ -57,6 +91,8 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
       name: m.name, emoji: m.emoji, ready: m.ready,
       host: m.id === room.host, connected: m.connected, you: m.id === forId,
       account: !!m.accountId, // verified signed-in account (see server/auth.js)
+      // Shareable by design — lets tablemates add each other as friends.
+      friendCode: m.friendCode || null,
     })),
     canStart: canStart(room),
   });
@@ -82,6 +118,7 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
   function destroyRoom(room, notify = true) {
     clearTimeout(room.turnTimer); clearTimeout(room.dealTimer);
     room.members.forEach(m => {
+      if (!m.left) settleMember(room, m);
       memberOf.delete(m.id);
       if (notify && m.connected) send(m.ws, { type: "ended" });
     });
@@ -89,6 +126,7 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
   }
 
   function removeMember(room, m) {
+    settleMember(room, m);
     m.left = true;
     memberOf.delete(m.id);
     if (room.host === m.id) {
@@ -173,8 +211,21 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
     if (!rooms.has(room.code)) return;
     const cutoff = Date.now() - RECONNECT_GRACE_MS;
     liveMembers(room).forEach(m => {
-      if (!m.connected && m.lastSeen < cutoff) { m.left = true; memberOf.delete(m.id); }
+      if (!m.connected && m.lastSeen < cutoff) { settleMember(room, m, m.chips); m.left = true; memberOf.delete(m.id); }
     });
+    // Bankroll cash games never auto-rebuy: a busted player is settled at 0
+    // and released (their chips were real saved chips — new ones can't appear
+    // from nowhere). Tournaments keep them seated as sat-out, like today.
+    if (room.config.bankroll && !room.config.tournament) {
+      liveMembers(room).forEach(m => {
+        if (m.chips <= 0) {
+          settleMember(room, m, 0);
+          if (m.connected) send(m.ws, { type: "error", msg: "You're out of chips — your table result was settled to your wallet." });
+          m.left = true; memberOf.delete(m.id);
+          if (m.connected) send(m.ws, { type: "ended" });
+        }
+      });
+    }
     const live = liveMembers(room);
     if (live.length === 0) return destroyRoom(room, false);
     if (room.host && !live.some(m => m.id === room.host)) room.host = live[0].id;
@@ -198,8 +249,9 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
 
     const humans = live.map((m, i) => {
       m.seat = i;
-      // Cash games rebuy busted players; tournaments leave them out (0 chips = sit out).
-      if (!tournament && m.chips <= 0) { m.chips = room.config.stack; m.rebuys = (m.rebuys || 0) + 1; }
+      // Cash games rebuy busted players (practice-chip rooms only); tournaments
+      // and bankroll rooms leave them out.
+      if (!tournament && !room.config.bankroll && m.chips <= 0) { m.chips = room.config.stack; m.rebuys = (m.rebuys || 0) + 1; }
       return mkPlayer(m.name, m.emoji, false, m.chips);
     });
     let ais = [];
@@ -299,6 +351,19 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
         const account = m.auth ? await verifyAccount(m.auth) : null;
         if (ws.readyState !== 1 || myRoom()) return; // re-check after await
         const config = validConfig(m.config);
+
+        // Saved-chips table: escrow the host's buy-in before the room exists.
+        let bankrollSession = null;
+        if (config.bankroll) {
+          if (!walletOps.configured) return send(ws, { type: "error", msg: "Saved-chips tables aren't enabled on this server." });
+          if (!account) return send(ws, { type: "error", msg: "Sign in to host a saved-chips table." });
+          const esc = await walletOps.buyIn(account.id, "NEW", config.stack);
+          if (ws.readyState !== 1 || myRoom()) { if (esc?.sessionId) walletOps.settle(esc.sessionId, config.stack).catch(() => {}); return; }
+          if (!esc) return send(ws, { type: "error", msg: "Couldn't reach the bank. Try again." });
+          if (esc.error) return send(ws, { type: "error", msg: esc.error === "insufficient" ? "Not enough saved chips for the buy-in." : "Buy-in failed. Try again." });
+          bankrollSession = esc.sessionId;
+        }
+
         const code = makeCode(rooms);
         const room = {
           code, host: deviceId, config, status: "lobby", game: null, aiChips: [],
@@ -309,6 +374,8 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
           name: sanitizeName(account?.name ?? m.profile?.name),
           emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
           accountId: account?.id || null,
+          friendCode: account?.friendCode || null,
+          bankrollSession, bankrollSettled: false,
           ready: true, connected: true, lastSeen: Date.now(), seat: 0, chips: config.stack, rebuys: 0, left: false,
         });
         rooms.set(code, room);
@@ -323,15 +390,38 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
         if (!rooms.has(code)) return send(ws, { type: "error", msg: "Room not found." });
         const account = m.auth ? await verifyAccount(m.auth) : null;
         if (ws.readyState !== 1 || myRoom()) return; // re-check after await
-        const room = rooms.get(code); // room can change while verifying — re-validate
+        let room = rooms.get(code); // room can change while verifying — re-validate
         if (!room) return send(ws, { type: "error", msg: "Room not found." });
         if (room.status === "playing") return send(ws, { type: "error", msg: "Game already in progress." });
         if (liveMembers(room).length >= MAX_SEATS) return send(ws, { type: "error", msg: "Table is full." });
+
+        // Saved-chips table: verified account + escrowed buy-in required to sit.
+        let bankrollSession = null;
+        if (room.config.bankroll) {
+          if (!walletOps.configured) return send(ws, { type: "error", msg: "Saved-chips tables aren't enabled on this server." });
+          if (!account) return send(ws, { type: "error", msg: "This is a saved-chips table — sign in to join." });
+          const stake = room.config.stack;
+          const esc = await walletOps.buyIn(account.id, code, stake);
+          if (!esc) return send(ws, { type: "error", msg: "Couldn't reach the bank. Try again." });
+          if (esc.error) return send(ws, { type: "error", msg: esc.error === "insufficient" ? "Not enough saved chips for the buy-in." : "Buy-in failed. Try again." });
+          bankrollSession = esc.sessionId;
+          // Re-validate after the escrow await; refund if the seat is gone.
+          room = rooms.get(code);
+          const gone = !room || room.status === "playing" || liveMembers(room).length >= MAX_SEATS || ws.readyState !== 1 || myRoom();
+          if (gone) {
+            walletOps.settle(bankrollSession, stake).catch(() => pendingSettles.push({ sid: bankrollSession, amt: stake }));
+            if (ws.readyState === 1) send(ws, { type: "error", msg: !room ? "Room not found." : room.status === "playing" ? "Game already in progress." : "Table is full." });
+            return;
+          }
+        }
+
         room.members.push({
           id: deviceId, ws,
           name: dedupeName(room, sanitizeName(account?.name ?? m.profile?.name)),
           emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
           accountId: account?.id || null,
+          friendCode: account?.friendCode || null,
+          bankrollSession, bankrollSettled: false,
           ready: false, connected: true, lastSeen: Date.now(), seat: 0, chips: room.config.stack, rebuys: 0, left: false,
         });
         room.lastActivity = Date.now();
@@ -351,7 +441,12 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
         broadcastRoom(room);
       } else if (m.type === "config") {
         if (room.status !== "lobby" || room.host !== deviceId) return;
-        room.config = validConfig(m.config);
+        // Bankroll rooms lock their config: buy-ins were escrowed at the
+        // configured stake, so stakes/format can't change under the players.
+        // And a practice room can never be flipped to bankroll after people
+        // joined without escrow — bankroll is decided at creation only.
+        if (room.config.bankroll) return;
+        room.config = { ...validConfig(m.config), bankroll: false };
         broadcastRoom(room);
       } else if (m.type === "start") {
         if (room.status !== "lobby" || room.host !== deviceId || !canStart(room)) return;
@@ -404,7 +499,7 @@ export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount
   return {
     port: () => httpServer.address()?.port,
     rooms,
-    close: () => { clearInterval(sweep); rooms.forEach(r => destroyRoom(r, false)); wss.close(); httpServer.close(); },
+    close: () => { clearInterval(sweep); clearInterval(settleTimer); rooms.forEach(r => destroyRoom(r, false)); wss.close(); httpServer.close(); },
   };
 }
 

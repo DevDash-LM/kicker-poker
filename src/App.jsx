@@ -12,8 +12,17 @@ import { Net, loadProfile, saveProfile } from "./net.js";
 import { REACTIONS, AVATARS } from "../server/protocol.js";
 import * as acct from "./account.js";
 import { accountsEnabled } from "./account.js";
-import { SignInModal, AccountScreen, InviteFriends, IncomingInvites } from "./account-ui.jsx";
+import { SignInModal, AccountScreen, InviteFriends, IncomingInvites, AddFriendButton, RecentPlayers } from "./account-ui.jsx";
+import { mergeRecentPlayers } from "./account-util.js";
 import * as sync from "./sync.js";
+import * as wallet from "./wallet.js";
+import { walletErrorMessage } from "./wallet-util.js";
+import * as shop from "./shop.js";
+import { ShopScreen } from "./shop-ui.jsx";
+import { applyEquipped, loadLocalEquipped, feltBackground, DEFAULT_EQUIPPED } from "./cosmetics.js";
+import { bumpDaily, newlyUnlocked, xpFromStats, levelFromXp, ACHIEVEMENTS, unlockedAchievements } from "./progress.js";
+import { loadDailyProgress, saveDailyProgress, fetchDailyStatus } from "./rewards.js";
+import { RewardsScreen } from "./rewards-ui.jsx";
 
 const BLIND_PRESETS = [[25, 50], [50, 100], [100, 200], [250, 500]];
 const STACK_PRESETS = [5000, 10000, 25000, 50000];
@@ -141,6 +150,22 @@ export default function App() {
   const [accProfile, setAccProfile] = useState(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // Saved-chips wallet (signed-in only). Balance is read from the server and
+  // only ever changed by the wallet RPCs — never written from the client.
+  const [walletBal, setWalletBal] = useState(null);
+  const [chipSource, setChipSource] = useState("practice"); // "practice" | "saved"
+  const [walletErr, setWalletErr] = useState(null);
+  const [walletBusy, setWalletBusy] = useState(false);
+  // Equipped cosmetics. The module-level EQUIPPED object (cosmetics.js) is
+  // what renderers read; this state mirror just triggers re-renders. Starts
+  // from the local mirror so the look is right before the cloud answers.
+  const [equipped, setEquipped] = useState(() => applyEquipped(loadLocalEquipped(), { persist: false }));
+  const [dailyStatus, setDailyStatus] = useState(null); // { claimedToday, streak } for the home badge
+  const [mpBankroll, setMpBankroll] = useState(false); // host a saved-chips table
+  const [recentPlayers, setRecentPlayers] = useState(() => {
+    try { return mergeRecentPlayers(JSON.parse(localStorage.getItem("kicker-recent-players")), []); } catch { return []; }
+  });
+  const [achToast, setAchToast] = useState(null);
   const [joinCode, setJoinCode] = useState(() => { try { return new URLSearchParams(location.search).get("room")?.toUpperCase().replace(/[^A-Z]/g, "") || ""; } catch { return ""; } });
   const [netErr, setNetErr] = useState(null);
   const [reactions, setReactions] = useState([]);
@@ -189,7 +214,12 @@ export default function App() {
     const hydrate = async (u) => {
       if (!live) return;
       setAuthUser(u);
-      if (!u) { setAccProfile(null); return; }
+      if (!u) {
+        setAccProfile(null); setWalletBal(null); setChipSource("practice");
+        setEquipped(applyEquipped(DEFAULT_EQUIPPED));
+        setDailyStatus(null);
+        return;
+      }
       try {
         const p = await acct.loadProfile();
         if (live && p) { setAccProfile(p); setProfile(pr => ({ ...pr, name: p.display_name, emoji: p.emoji })); }
@@ -203,6 +233,22 @@ export default function App() {
           setHistory(store.loadHistory());
           const d = isDark(); setDark(d); applyTheme(d);
         }
+      } catch {}
+      try {
+        // Retry any cash-outs that failed to reach the server last time
+        // (idempotent server-side), then load the saved-chips balance.
+        const flushed = await wallet.flushPending();
+        const bal = flushed ?? (await wallet.getBalance());
+        if (live) setWalletBal(bal);
+      } catch {}
+      try {
+        // Equipped cosmetics follow the account across devices.
+        const eq = await shop.fetchEquipped();
+        if (live) setEquipped(applyEquipped({ ...DEFAULT_EQUIPPED, ...eq }));
+      } catch {}
+      try {
+        const ds = await fetchDailyStatus();
+        if (live) setDailyStatus(ds);
       } catch {}
     };
     acct.getUser().then(hydrate).catch(() => {});
@@ -218,10 +264,13 @@ export default function App() {
   };
 
   const leaveCleanup = () => {
+    const wasBankroll = !!room?.config?.bankroll;
     netRef.current?.close();
     netRef.current = null;
     setConn("off"); setMode("solo"); setRoom(null); setGame(null);
     setDeadlineMs(null); setConnList([]); setLeaveOpen(false); setScreen("home");
+    // The server settles bankroll seats to the wallet — refresh the balance.
+    if (wasBankroll && authUser) wallet.getBalance().then(b => { if (b != null) setWalletBal(b); }).catch(() => {});
   };
 
   const spawnReaction = (name, emoji) => {
@@ -240,6 +289,14 @@ export default function App() {
   msgRef.current = m => {
     if (m.type === "room") {
       setRoom(m);
+      // Remember verified tablemates so they can be added as friends later.
+      if (m.members?.some(mm => mm.friendCode && !mm.you)) {
+        setRecentPlayers(prev => {
+          const next = mergeRecentPlayers(prev, m.members);
+          try { localStorage.setItem("kicker-recent-players", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
       if (m.status === "lobby") {
         setMode("mp"); setGame(null); setDeadlineMs(null);
         if (screenRef.current !== "lobby") setScreen("lobby");
@@ -291,7 +348,7 @@ export default function App() {
   const createRoom = async () => {
     setNetErr(null); saveProfile(profile);
     const auth = await authToken();
-    sendWhenReady({ type: "create", profile, auth, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false, tournament: !!settings.tournament } });
+    sendWhenReady({ type: "create", profile, auth, config: { sb: settings.sb, bb: settings.bb, stack: settings.stack, fillAI: false, tournament: !!settings.tournament, bankroll: mpBankroll && !!authUser } });
   };
   const joinRoom = async () => {
     const code = joinCode.trim().toUpperCase();
@@ -325,9 +382,32 @@ export default function App() {
   };
   const doAction = (g, idx, a) => { recordAction(g, idx, a); return applyAction(g, idx, a); };
 
-  const newTable = (cfg) => {
-    const botNames = pickNames(cfg.ai);
+  const newTable = async (cfg) => {
     const stack = Math.max(500, Math.min(1000000, cfg.stack || 10000));
+
+    // Starting a new table over an unfinished bankroll table cashes the old
+    // one out first at its current chip count, so those chips aren't stranded.
+    const prior = gameRef.current || store.loadSave()?.game;
+    if (prior?.wallet) settleWalletGame(prior, store.loadSave()?.session?.hands);
+
+    // Saved-chips table: debit the buy-in from the wallet before dealing.
+    let walletTag = null;
+    if (chipSource === "saved" && authUser) {
+      setWalletErr(null); setWalletBusy(true);
+      try {
+        const r = await wallet.buyIn(stack);
+        setWalletBal(r.balance);
+        walletTag = { sessionId: r.sessionId, stake: stack };
+      } catch (e) {
+        setWalletErr(walletErrorMessage(e?.code));
+        if (typeof e?.balance === "number") setWalletBal(e.balance);
+        setWalletBusy(false);
+        return; // stay on setup
+      }
+      setWalletBusy(false);
+    }
+
+    const botNames = pickNames(cfg.ai);
     const players = [
       { name: "You", emoji: "🙂", ai: false, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
       ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
@@ -335,6 +415,7 @@ export default function App() {
     const base = {
       players, dealer: secureInt(players.length), handNo: 0, board: [], deck: [], stage: "hand",
       blinds: { sb: cfg.sb, bb: cfg.bb }, startStack: stack, tournament: !!cfg.tournament,
+      ...(walletTag ? { wallet: walletTag } : {}),
     };
     setSession({ hands: 0, won: 0, biggest: 0, rebuys: 0 });
     setGame(startHand(base));
@@ -354,8 +435,19 @@ export default function App() {
     setConfettiKey(-1);
   };
 
+  // Cash a bankroll game's session out to the wallet at the hero's current
+  // chip count. Idempotent + clamped server-side; a failed call is queued by
+  // wallet.js and retried on the next launch, so chips can't be lost or doubled.
+  const settleWalletGame = (g, hands) => {
+    if (!g?.wallet?.sessionId || !authUser) return;
+    wallet.cashOut(g.wallet.sessionId, g.players[0].chips, hands ?? null)
+      .then(r => setWalletBal(r.balance))
+      .catch(() => {});
+  };
+
   const leaveTable = () => {
     if (mode === "mp") { netRef.current?.send({ type: "leave" }); leaveCleanup(); return; }
+    settleWalletGame(gameRef.current, sessionRef.current?.hands);
     const st = store.loadStats();
     st.tables += 1;
     st.rebuys += session.rebuys;
@@ -518,12 +610,50 @@ export default function App() {
     };
     setHistory(h => { const nh = [entry, ...h].slice(0, 25); store.saveHistory(nh); return nh; });
     const st = store.loadStats();
+    const prevStats = { ...st };
     st.hands += 1;
     st.won += heroWin ? 1 : 0;
     st.net += net;
     st.biggestPot = Math.max(st.biggestPot, heroWin ? heroWin.amount : 0);
+    // Showdown + hand-rank tracking (feeds achievements and daily quests).
+    // A showdown = the hero saw all five board cards without folding, against
+    // at least one live opponent.
+    const heroP = game.players[0];
+    const showdown = !heroP.folded && game.board.length === 5 && heroP.cards.length === 2 &&
+      game.players.filter(pl => !pl.folded).length >= 2;
+    let category = -1;
+    if (showdown) {
+      const score = eval7([...heroP.cards, ...game.board]);
+      category = score[0];
+      st.showdowns = (st.showdowns || 0) + 1;
+      if (category === 6) st.fullHouses = (st.fullHouses || 0) + 1;
+      if (category === 7) st.quads = (st.quads || 0) + 1;
+      if (category === 8) {
+        st.straightFlushes = (st.straightFlushes || 0) + 1;
+        if (score[1] === 14) st.royals = (st.royals || 0) + 1;
+      }
+    }
     store.saveStats(st); sync.pushSoon();
+    // Daily quest progress is a local per-UTC-day counter; only claiming the
+    // reward talks to the server.
+    saveDailyProgress(bumpDaily(loadDailyProgress(), { won: !!heroWin, showdown, category }));
+    toastAchievements(prevStats, st);
   }, [game?.stage]);
+
+  // Show a short banner for anything a stats change just earned: a new
+  // achievement first, otherwise a level-up.
+  const toastAchievements = (before, after) => {
+    const fresh = newlyUnlocked(before, after);
+    let text = fresh.length ? `🏅 Achievement unlocked — ${fresh[0].name}` : null;
+    if (!text) {
+      const was = levelFromXp(xpFromStats(before)).level;
+      const now = levelFromXp(xpFromStats(after)).level;
+      if (now > was) text = `⬆️ Level up — Level ${now}`;
+    }
+    if (!text) return;
+    setAchToast(text);
+    setTimeout(() => setAchToast(cur => (cur === text ? null : cur)), 3400);
+  };
 
   // Record a tournament result once, when the hero is eliminated or crowned
   // champion. statsRecorded is written onto the game so it survives a reload of
@@ -539,12 +669,36 @@ export default function App() {
     // Finish place: 1 for a win, otherwise everyone still holding chips outlasted the hero.
     const place = heroWon ? 1 : aliveCount(game) + 1;
     const st = store.loadStats();
+    const prevStats = { ...st };
     st.tourneys = (st.tourneys || 0) + 1;
     st.tourneyWins = (st.tourneyWins || 0) + (heroWon ? 1 : 0);
     st.bestFinish = st.bestFinish ? Math.min(st.bestFinish, place) : place;
     store.saveStats(st); sync.pushSoon();
+    toastAchievements(prevStats, st);
     setGame(g => (g && g.stage === "over" ? { ...g, statsRecorded: true } : g));
   }, [game?.stage, game?.champion, mode]);
+
+  // Cash-game rebuy. On a saved-chips table the wallet is debited first —
+  // no chips appear at the table unless the server approved the debit.
+  const doRebuy = async () => {
+    const g = gameRef.current;
+    if (!g) return;
+    if (g.wallet?.sessionId && authUser) {
+      setWalletBusy(true); setWalletErr(null);
+      try {
+        const r = await wallet.rebuy(g.wallet.sessionId);
+        setWalletBal(r.balance);
+      } catch (e) {
+        setWalletErr(walletErrorMessage(e?.code));
+        if (typeof e?.balance === "number") setWalletBal(e.balance);
+        setWalletBusy(false);
+        return;
+      }
+      setWalletBusy(false);
+    }
+    setSession(sn => ({ ...sn, rebuys: sn.rebuys + 1 }));
+    setGame(g2 => { const n = clone(g2); n.players[0].chips = g2.startStack || 10000; return startHand(n); });
+  };
 
   const skipRef = useRef(false);
   const skipHand = () => {
@@ -623,7 +777,12 @@ export default function App() {
       if (p) { setAccProfile(p); setProfile(pr => ({ ...pr, name: p.display_name, emoji: p.emoji })); }
     } catch {}
   };
-  const onSignedOut = () => { setAccountOpen(false); setAccProfile(null); setAuthUser(null); };
+  const onSignedOut = () => {
+    setAccountOpen(false); setAccProfile(null); setAuthUser(null);
+    setWalletBal(null); setChipSource("practice");
+    setEquipped(applyEquipped(DEFAULT_EQUIPPED));
+    setDailyStatus(null);
+  };
   const accountOverlays = accountsEnabled ? (
     <>
       {signInOpen && <SignInModal onClose={() => setSignInOpen(false)} onSignedIn={onSignedIn} />}
@@ -671,10 +830,16 @@ export default function App() {
             </p>
           </div>
           <div className="rise-in" style={{ width: wide ? 360 : "auto", flexShrink: 0, paddingBottom: wide ? 0 : "calc(env(safe-area-inset-bottom) + 18px)", display: "flex", flexDirection: "column", gap: 10, animationDelay: ".16s" }}>
+            {authUser && walletBal != null && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
+                <span style={{ color: C.muted, fontSize: 14 }}>Saved chips</span>
+                <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(walletBal)}</span>
+              </div>
+            )}
             {saved?.game ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
-                  <span style={{ color: C.muted, fontSize: 14 }}>Table in progress · Hand #{saved.game.handNo}</span>
+                  <span style={{ color: C.muted, fontSize: 14 }}>Table in progress · Hand #{saved.game.handNo}{saved.game.wallet ? " · Saved chips" : ""}</span>
                   <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(saved.game.players[0].chips)} chips</span>
                 </div>
                 <Btn kind="primary" onClick={resumeTable} style={{ padding: "17px 0", fontSize: 16 }}>Resume table</Btn>
@@ -693,6 +858,17 @@ export default function App() {
             {accountsEnabled && (authUser
               ? <Btn onClick={() => setAccountOpen(true)}>{accProfile ? `Account · ${accProfile.display_name}` : "Account"}</Btn>
               : <Btn onClick={() => setSignInOpen(true)}>Sign in to Kicker</Btn>)}
+            {accountsEnabled && (
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => setScreen("shop")} style={{ fontSize: 14, padding: "12px 0" }}>Shop</Btn>
+                <Btn onClick={() => setScreen("rewards")} style={{ fontSize: 14, padding: "12px 0", position: "relative" }}>
+                  Rewards
+                  {authUser && dailyStatus && !dailyStatus.claimedToday && (
+                    <span style={{ position: "absolute", top: 9, marginLeft: 5, width: 7, height: 7, borderRadius: 4, background: C.accent, display: "inline-block" }} />
+                  )}
+                </Btn>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10 }}>
               <Btn onClick={() => openHistory("home")} style={{ fontSize: 14, padding: "12px 0" }}>Hand history</Btn>
               <Btn onClick={() => setScreen("stats")} style={{ fontSize: 14, padding: "12px 0" }}>Stats</Btn>
@@ -718,6 +894,24 @@ export default function App() {
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Table setup</div>
           </div>
           <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
+            {accountsEnabled && authUser && (
+              <div style={{ gridColumn: wide ? "1 / -1" : undefined }}>
+                <SetupLabel>Chips</SetupLabel>
+                <OptionRow options={["practice", "saved"]} value={chipSource}
+                  onChange={v => { setWalletErr(null); setChipSource(v); }}
+                  render={v => (v === "saved" ? "Saved chips" : "Practice")} />
+                <div style={{ fontSize: 12, color: C.faint, marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
+                  {chipSource === "saved"
+                    ? `Buy-in comes from your wallet — ${walletBal == null ? "…" : fmt(walletBal)} saved chips. You cash out when you leave the table.`
+                    : "Practice chips are free and don't touch your saved chips."}
+                </div>
+                {chipSource === "saved" && walletBal != null && walletBal < cfg.stack && (
+                  <div style={{ fontSize: 12, color: C.red, marginTop: 4, fontWeight: 600 }}>
+                    Not enough saved chips for this stack — lower the stack or play with practice chips.
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <SetupLabel>Format</SetupLabel>
               <OptionRow options={[false, true]} value={!!cfg.tournament}
@@ -764,7 +958,14 @@ export default function App() {
             </div>
           </div>
           <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
-            <Btn kind="primary" onClick={() => newTable(cfg)} style={{ padding: "17px 0", fontSize: 16, width: "100%" }}>Deal me in</Btn>
+            {walletErr && (
+              <div style={{ fontSize: 13, color: C.red, fontWeight: 600, textAlign: "center", marginBottom: 10 }}>{walletErr}</div>
+            )}
+            <Btn kind="primary" onClick={() => newTable(cfg)}
+              disabled={walletBusy || (chipSource === "saved" && !!authUser && walletBal != null && walletBal < cfg.stack)}
+              style={{ padding: "17px 0", fontSize: 16, width: "100%" }}>
+              {walletBusy ? "Buying in…" : chipSource === "saved" && authUser ? `Buy in ${fmt(cfg.stack)} & deal` : "Deal me in"}
+            </Btn>
           </div>
         </div>
       </div>
@@ -820,13 +1021,37 @@ export default function App() {
             </div>
             <div>
               <SetupLabel>Or start one</SetupLabel>
-              <Btn kind="accent" onClick={createRoom} style={{ width: "100%" }}>Create a table</Btn>
+              {accountsEnabled && authUser && (
+                <div style={{ marginBottom: 10 }}>
+                  <OptionRow options={[false, true]} value={mpBankroll}
+                    onChange={v => setMpBankroll(v)}
+                    render={v => (v ? "Saved chips" : "Practice chips")} />
+                  <div style={{ fontSize: 12, color: C.faint, marginTop: 6, fontVariantNumeric: "tabular-nums", lineHeight: 1.5 }}>
+                    {mpBankroll
+                      ? `Everyone buys in ${fmt(settings.stack)} from their saved chips (you have ${walletBal == null ? "…" : fmt(walletBal)}) and cashes out their stack when they leave. Signed-in players only; settings lock once created.`
+                      : "Free practice chips — anyone can join, nothing is at stake."}
+                  </div>
+                  {mpBankroll && walletBal != null && walletBal < settings.stack && (
+                    <div style={{ fontSize: 12, color: C.red, marginTop: 4, fontWeight: 600 }}>
+                      Not enough saved chips for the {fmt(settings.stack)} buy-in.
+                    </div>
+                  )}
+                </div>
+              )}
+              <Btn kind="accent" onClick={createRoom}
+                disabled={mpBankroll && !!authUser && walletBal != null && walletBal < settings.stack}
+                style={{ width: "100%" }}>
+                {mpBankroll && authUser ? `Create · buy in ${fmt(settings.stack)}` : "Create a table"}
+              </Btn>
               <div style={{ fontSize: 12, color: C.faint, marginTop: 6, lineHeight: 1.5 }}>
-                You'll get a 4-letter code and a link to share. Blinds, stacks, and AI fill can be changed in the lobby.
+                You'll get a 5-letter code and a link to share.{mpBankroll && authUser ? "" : " Blinds, stacks, and AI fill can be changed in the lobby."}
               </div>
             </div>
             {accountsEnabled && authUser && (
               <div style={{ gridColumn: "1 / -1" }}><IncomingInvites onJoin={joinRoomCode} /></div>
+            )}
+            {accountsEnabled && authUser && recentPlayers.length > 0 && (
+              <div style={{ gridColumn: "1 / -1" }}><RecentPlayers players={recentPlayers} /></div>
             )}
             {accountsEnabled && !authUser && (
               <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
@@ -865,10 +1090,18 @@ export default function App() {
         <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
           <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
             <button onClick={leaveTable} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Leave</button>
-            <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink }}>Private table</div>
+            <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink }}>{room.config.bankroll ? "Saved-chips table" : "Private table"}</div>
             <span className="conn-dot" style={{ background: conn === "on" ? C.green : C.gold, marginLeft: 30 }} />
           </div>
           <div style={{ flex: 1, overflowY: "auto", display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 18, paddingTop: 8 }}>
+            {room.config.bankroll && (
+              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", background: `${C.gold}14`, border: `1.5px solid ${C.gold}`, borderRadius: 14 }}>
+                <span style={{ fontSize: 17 }}>🪙</span>
+                <span style={{ fontSize: 12.5, color: C.ink, fontWeight: 600, lineHeight: 1.5, fontVariantNumeric: "tabular-nums" }}>
+                  This table plays for saved chips. Your {fmt(room.config.stack)} buy-in is held while you play — leaving banks your stack back to your wallet. Busted players don't rebuy.
+                </span>
+              </div>
+            )}
             <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "18px 0 6px" }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>Room code</div>
               <div style={{ fontSize: 40, fontWeight: 800, letterSpacing: ".3em", color: C.ink, fontVariantNumeric: "tabular-nums", marginLeft: ".3em" }}>{room.code}</div>
@@ -886,6 +1119,7 @@ export default function App() {
                     {mm.host && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, background: C.ink, color: C.onPrim, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>HOST</span>}
                     {mm.account && <span title="Signed-in Kicker account" style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>✓</span>}
                   </span>
+                  {accountsEnabled && authUser && !mm.you && mm.friendCode && <AddFriendButton friendCode={mm.friendCode} compact />}
                   <span className="conn-dot" style={{ background: mm.connected ? C.green : C.gold }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: mm.ready ? C.green : C.faint, width: 44, textAlign: "right" }}>{mm.ready ? "Ready" : "…"}</span>
                 </div>
@@ -897,7 +1131,19 @@ export default function App() {
                 <div style={{ fontSize: 12, color: C.faint, textAlign: "center", padding: "4px 0" }}>Empty seats will be filled with AI players.</div>
               )}
             </div>
-            {isHost ? (
+            {isHost && room.config.bankroll ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 13, color: C.muted, textAlign: "center" }}>
+                  {room.config.tournament ? "Tournament" : "Cash game"} · Blinds {room.config.sb}/{room.config.bb} · Buy-in {fmt(room.config.stack)} · settings locked
+                </div>
+                {accountsEnabled && authUser && (
+                  <div>
+                    <SetupLabel>Invite friends</SetupLabel>
+                    <InviteFriends roomCode={room.code} />
+                  </div>
+                )}
+              </div>
+            ) : isHost ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div>
                   <SetupLabel>Format</SetupLabel>
@@ -937,7 +1183,7 @@ export default function App() {
               </div>
             ) : (
               <div style={{ fontSize: 13, color: C.muted, textAlign: "center" }}>
-                {room.config.tournament ? "Tournament" : "Cash game"} · Blinds {room.config.sb}/{room.config.bb} · Stack {fmt(room.config.stack)} · {room.config.fillAI ? "AI fill on" : "humans only"}
+                {room.config.bankroll ? "Saved chips · " : ""}{room.config.tournament ? "Tournament" : "Cash game"} · Blinds {room.config.sb}/{room.config.bb} · {room.config.bankroll ? "Buy-in" : "Stack"} {fmt(room.config.stack)} · {room.config.fillAI ? "AI fill on" : "humans only"}
               </div>
             )}
             {netErr && <div style={{ gridColumn: "1 / -1", color: C.red, fontSize: 13, fontWeight: 600, textAlign: "center" }}>{netErr}</div>}
@@ -1018,6 +1264,8 @@ export default function App() {
   if (screen === "stats") {
     const st = store.loadStats();
     const from = game ? "game" : "home";
+    const lv = levelFromXp(xpFromStats(st));
+    const unlocked = unlockedAchievements(st);
     return (
       <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
@@ -1026,6 +1274,18 @@ export default function App() {
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Lifetime stats</div>
           </div>
           <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 10, paddingTop: 8 }}>
+            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: C.surface, borderRadius: 14, border: `1px solid ${C.line}` }}>
+              <div style={{ width: 46, height: 46, borderRadius: 23, background: C.ink, color: C.onPrim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, flexShrink: 0 }}>{lv.level}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>Level {lv.level}</span>
+                  <span style={{ fontSize: 12, color: C.muted, fontVariantNumeric: "tabular-nums" }}>{fmt(lv.intoLevel)} / {fmt(lv.forNext)} XP</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: C.line, overflow: "hidden", marginTop: 7 }}>
+                  <div style={{ width: `${lv.frac * 100}%`, height: "100%", background: C.accent, transition: "width .3s ease" }} />
+                </div>
+              </div>
+            </div>
             <StatRow label="Tables played" value={st.tables} />
             <StatRow label="Hands played" value={st.hands} />
             <StatRow label="Hands won" value={`${st.won}${st.hands ? ` (${Math.round((st.won / st.hands) * 100)}%)` : ""}`} />
@@ -1038,12 +1298,48 @@ export default function App() {
             <StatRow label="Tournaments played" value={st.tourneys} />
             <StatRow label="Tournaments won" value={`${st.tourneyWins}${st.tourneys ? ` (${Math.round((st.tourneyWins / st.tourneys) * 100)}%)` : ""}`} color={st.tourneyWins ? C.green : undefined} />
             <StatRow label="Best finish" value={st.bestFinish ? ordinal(st.bestFinish) : "—"} />
+            <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
+              <SetupLabel>Achievements · {unlocked.size}/{ACHIEVEMENTS.length}</SetupLabel>
+              <div style={{ display: "grid", gridTemplateColumns: wide ? "repeat(3, 1fr)" : "repeat(2, 1fr)", gap: 8 }}>
+                {ACHIEVEMENTS.map(a => {
+                  const on = unlocked.has(a.id);
+                  return (
+                    <div key={a.id} style={{ padding: "11px 13px", background: C.surface, borderRadius: 13, border: `1.5px solid ${on ? C.gold : C.line}`, opacity: on ? 1 : 0.55 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: on ? C.ink : C.muted }}>{on ? "🏅 " : "🔒 "}{a.name}</div>
+                      <div style={{ fontSize: 11, color: C.faint, marginTop: 3, lineHeight: 1.4 }}>{a.desc}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
             <Btn kind="danger" onClick={() => { store.resetStats(); sync.pushSoon(); setScreen("home"); setTimeout(() => setScreen("stats"), 0); }} style={{ width: "100%" }}>Reset stats</Btn>
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (screen === "rewards") {
+    return (
+      <>
+        {accountOverlays}
+        <RewardsScreen wide={wide} authUser={authUser} walletBal={walletBal}
+          onBalance={setWalletBal} dailyStatus={dailyStatus} onDailyStatus={setDailyStatus}
+          onSignIn={() => setSignInOpen(true)} onClose={() => setScreen("home")} />
+      </>
+    );
+  }
+
+  if (screen === "shop") {
+    return (
+      <>
+        {accountOverlays}
+        <ShopScreen dark={dark} wide={wide} authUser={authUser} walletBal={walletBal}
+          onBalance={setWalletBal} onEquippedChange={setEquipped}
+          onSignIn={() => setSignInOpen(true)} onClose={() => setScreen(game ? "game" : "home")} />
+      </>
     );
   }
 
@@ -1144,11 +1440,17 @@ export default function App() {
             </div>
           </div>
         ) : heroBusted ? (
-          <div style={{ display: "flex" }}>
-            <Btn kind="accent" onClick={() => {
-              setSession(sn => ({ ...sn, rebuys: sn.rebuys + 1 }));
-              setGame(g => { const n = clone(g); n.players[0].chips = g.startStack || 10000; return startHand(n); });
-            }}>Rebuy {fmt(game.startStack || 10000)} & deal</Btn>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex" }}>
+              <Btn kind="accent" disabled={walletBusy} onClick={doRebuy}>
+                {walletBusy ? "Rebuying…" : `Rebuy ${fmt(game.startStack || 10000)} & deal`}
+              </Btn>
+            </div>
+            {game.wallet && (
+              <div style={{ textAlign: "center", fontSize: 12, color: walletErr ? C.red : C.faint, fontWeight: 600 }}>
+                {walletErr || `Rebuy comes from your saved chips (${walletBal == null ? "…" : fmt(walletBal)}).`}
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: "flex" }}>
@@ -1234,11 +1536,18 @@ export default function App() {
   );
 
   return (
-    <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
+    <div className="vh" style={{ background: feltBackground(equipped.felt, dark) || C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
       <div ref={containerRef} className="vh" style={{ width: "100%", maxWidth: wide ? "none" : 420, display: "flex", flexDirection: "column", position: "relative", paddingTop: "env(safe-area-inset-top)" }}>
 
         {flights.map(f => <ChipFlyer key={f.id} from={f.from} to={f.to} delay={f.delay} />)}
         {reactions.map(r => <div key={r.id} className="reaction-float" style={{ left: r.x - 12, top: r.y }}>{r.emoji}</div>)}
+        {achToast && (
+          <div className="banner-up" style={{ position: "absolute", top: 52, left: 0, right: 0, display: "flex", justifyContent: "center", zIndex: 70, pointerEvents: "none" }}>
+            <div style={{ background: C.bannerBg, color: "#fff", borderRadius: 14, padding: "10px 18px", fontSize: 13, fontWeight: 700, boxShadow: "0 8px 24px rgba(20,24,33,.3)" }}>
+              {achToast}
+            </div>
+          </div>
+        )}
         {game.stage === "over" && confettiKey === game.handNo && <Confetti key={confettiKey} />}
         {mode === "mp" && conn !== "on" && (
           <Modal>
@@ -1255,7 +1564,16 @@ export default function App() {
               <StatRow label="Net chips" value={netStr(sessionNet)} color={netColor(sessionNet)} />
               <StatRow label="Biggest pot" value={fmt(session.biggest)} />
               {session.rebuys > 0 && <StatRow label="Rebuys" value={session.rebuys} />}
+              {((mode === "solo" && game.wallet) || (mode === "mp" && room?.config?.bankroll)) && (
+                <StatRow label="Cash out to wallet" value={fmt(hero.chips)} color={C.green} />
+              )}
             </div>
+            {((mode === "solo" && game.wallet) || (mode === "mp" && room?.config?.bankroll)) && (
+              <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
+                This is a saved-chips table — leaving banks your stack back into your wallet.
+                {mode === "mp" ? " Chips already in the pot stay in the hand." : ""}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={() => setLeaveOpen(false)}>Keep playing</Btn>
               <Btn kind="danger" onClick={leaveTable}>Leave table</Btn>

@@ -39,9 +39,11 @@ async function supaGet(path, token) {
   }
 }
 
-// Verify a Supabase access token. Resolves to { id, name, emoji } for a valid
-// signed-in user (name/emoji may be null if the profile row is missing), or
-// null for anything else. Never throws.
+// Verify a Supabase access token. Resolves to { id, name, emoji, friendCode }
+// for a valid signed-in user (profile fields may be null if the row is
+// missing), or null for anything else. Never throws.
+// friendCode is included so tablemates can add each other as friends straight
+// from the room — it's a shareable invite code by design, not a secret.
 export async function verifyAccount(token) {
   if (!accountsConfigured) return null;
   if (typeof token !== "string" || token.length < 20 || token.length > 4096) return null;
@@ -49,11 +51,11 @@ export async function verifyAccount(token) {
   const id = user?.id;
   if (typeof id !== "string" || !id) return null;
   // Read the profile with the user's own token — RLS allows any authenticated
-  // user to read profiles (names/emoji only, nothing sensitive lives there).
+  // user to read profiles (names/emoji/friend codes, nothing sensitive).
   const rows = await supaGet(
-    `/rest/v1/profiles?id=eq.${encodeURIComponent(id)}&select=display_name,emoji`,
+    `/rest/v1/profiles?id=eq.${encodeURIComponent(id)}&select=display_name,emoji,friend_code`,
     token
   );
   const p = Array.isArray(rows) ? rows[0] : null;
-  return { id, name: p?.display_name ?? null, emoji: p?.emoji ?? null };
+  return { id, name: p?.display_name ?? null, emoji: p?.emoji ?? null, friendCode: p?.friend_code ?? null };
 }
