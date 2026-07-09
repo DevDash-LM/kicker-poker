@@ -1,4 +1,4 @@
-# Kicker — Mobile Poker
+# Kicker — Multiplayer Poker
 User-agent: *
 Allow: /
 
