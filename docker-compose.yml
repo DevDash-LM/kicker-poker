@@ -17,3 +17,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8787:8787"
+    # The game server also needs Supabase at RUNTIME to verify signed-in
+    # players on room create/join (server/auth.js). Same public anon values
+    # as the build args; leave blank and every player is treated as a guest.
+    environment:
+      SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}

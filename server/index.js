@@ -8,8 +8,11 @@ import {
   PROTO, MAX_SEATS, TURN_MS, RECONNECT_GRACE_MS, NEXT_HAND_MS, REACTIONS,
   makeCode, sanitizeName, sanitizeAvatar, mkPlayer, redactFor, validAction, validConfig,
 } from "./protocol.js";
+import { verifyAccount as defaultVerifyAccount } from "./auth.js";
 
-export function createServer(port = 8787) {
+// `verifyAccount` is injectable so tests can exercise the account path without
+// a live Supabase project.
+export function createServer(port = 8787, { verifyAccount = defaultVerifyAccount } = {}) {
   const rooms = new Map();
   const memberOf = new Map();
 
@@ -53,6 +56,7 @@ export function createServer(port = 8787) {
     members: liveMembers(room).map(m => ({
       name: m.name, emoji: m.emoji, ready: m.ready,
       host: m.id === room.host, connected: m.connected, you: m.id === forId,
+      account: !!m.accountId, // verified signed-in account (see server/auth.js)
     })),
     canStart: canStart(room),
   });
@@ -262,7 +266,7 @@ export function createServer(port = 8787) {
     };
     const myMember = room => room?.members.find(m => m.id === deviceId && !m.left) || null;
 
-    ws.on("message", raw => {
+    ws.on("message", async raw => {
       if (++msgCount > 20) { if (msgCount > 60) ws.close(); return; }
       let m;
       try { m = JSON.parse(raw); } catch { return; }
@@ -289,6 +293,11 @@ export function createServer(port = 8787) {
 
       if (m.type === "create") {
         if (myRoom()) return send(ws, { type: "error", msg: "Already in a room." });
+        // Signed-in players attach their Supabase access token; a verified
+        // account pins the member's identity (account id + profile name/emoji),
+        // ignoring the client-typed profile. Any failure falls back to guest.
+        const account = m.auth ? await verifyAccount(m.auth) : null;
+        if (ws.readyState !== 1 || myRoom()) return; // re-check after await
         const config = validConfig(m.config);
         const code = makeCode(rooms);
         const room = {
@@ -296,7 +305,10 @@ export function createServer(port = 8787) {
           members: [], turnTimer: null, dealTimer: null, deadline: null, lastActivity: Date.now(),
         };
         room.members.push({
-          id: deviceId, ws, name: sanitizeName(m.profile?.name), emoji: sanitizeAvatar(m.profile?.emoji),
+          id: deviceId, ws,
+          name: sanitizeName(account?.name ?? m.profile?.name),
+          emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
+          accountId: account?.id || null,
           ready: true, connected: true, lastSeen: Date.now(), seat: 0, chips: config.stack, rebuys: 0, left: false,
         });
         rooms.set(code, room);
@@ -308,12 +320,18 @@ export function createServer(port = 8787) {
       if (m.type === "join") {
         if (myRoom()) return send(ws, { type: "error", msg: "Already in a room." });
         const code = String(m.code || "").toUpperCase().trim();
-        const room = rooms.get(code);
+        if (!rooms.has(code)) return send(ws, { type: "error", msg: "Room not found." });
+        const account = m.auth ? await verifyAccount(m.auth) : null;
+        if (ws.readyState !== 1 || myRoom()) return; // re-check after await
+        const room = rooms.get(code); // room can change while verifying — re-validate
         if (!room) return send(ws, { type: "error", msg: "Room not found." });
         if (room.status === "playing") return send(ws, { type: "error", msg: "Game already in progress." });
         if (liveMembers(room).length >= MAX_SEATS) return send(ws, { type: "error", msg: "Table is full." });
         room.members.push({
-          id: deviceId, ws, name: dedupeName(room, sanitizeName(m.profile?.name)), emoji: sanitizeAvatar(m.profile?.emoji),
+          id: deviceId, ws,
+          name: dedupeName(room, sanitizeName(account?.name ?? m.profile?.name)),
+          emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
+          accountId: account?.id || null,
           ready: false, connected: true, lastSeen: Date.now(), seat: 0, chips: room.config.stack, rebuys: 0, left: false,
         });
         room.lastActivity = Date.now();
