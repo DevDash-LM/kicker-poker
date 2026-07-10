@@ -26,6 +26,7 @@ export function useCountUp(value, dur = 380) {
 import { C, SUIT_META, FONT } from "./theme.js";
 import { RANK_STR, fmt } from "./game/logic.js";
 import { S, buzz } from "./fx/fx.js";
+import { EQUIPPED, cardBackDesign, chipDesign } from "./cosmetics.js";
 
 export function CardFace({ card, w = 44, h = 62, fs = 17, className = "", style }) {
   const m = SUIT_META[card.s];
@@ -42,20 +43,26 @@ export function CardFace({ card, w = 44, h = 62, fs = 17, className = "", style 
   );
 }
 
-export function CardBack({ w = 30, h = 42, className = "", style }) {
+// Card backs are a viewer-side cosmetic: the equipped design styles every
+// face-down card on YOUR screen (one deck, one back — like a real table).
+// Purely visual — face-down cards carry no card data (see server redaction).
+export function CardBack({ w = 30, h = 42, className = "", style, design }) {
+  const d = design || cardBackDesign(EQUIPPED.cardback);
   return (
     <div className={className} style={{
-      width: w, height: h, borderRadius: w * 0.18, background: C.cardBack,
-      boxShadow: "0 1px 2px rgba(20,24,33,.2)", position: "relative", flexShrink: 0, ...style,
+      width: w, height: h, borderRadius: w * 0.18, background: d.bg || C.cardBack,
+      boxShadow: "0 1px 2px rgba(20,24,33,.2)", position: "relative", flexShrink: 0,
+      overflow: "hidden", ...style,
     }}>
+      {d.texture && <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: d.texture }} />}
       <div style={{
         position: "absolute", inset: 4, borderRadius: w * 0.12,
-        border: "1px solid rgba(255,255,255,.14)",
+        border: `1px solid ${d.edge || "rgba(255,255,255,.14)"}`,
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         <div aria-hidden="true" style={{
           width: w * 0.52, height: w * 0.52,
-          background: "rgba(255,255,255,.22)",
+          background: d.logo || "rgba(255,255,255,.22)",
           WebkitMaskImage: "url(/logo-mark.png)", maskImage: "url(/logo-mark.png)",
           WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
           WebkitMaskPosition: "center", maskPosition: "center",
@@ -161,12 +168,13 @@ export function Btn({ children, onClick, kind = "ghost", disabled, style }) {
   );
 }
 
-export function ChipDot() {
+export function ChipDot({ design }) {
+  const d = design || chipDesign(EQUIPPED.chips);
   const sz = 16;
   return (
     <div style={{
-      width: sz, height: sz, borderRadius: "50%", background: C.accent,
-      border: "2.5px dashed rgba(255,255,255,.8)", boxSizing: "border-box",
+      width: sz, height: sz, borderRadius: "50%", background: d.bg || C.accent,
+      border: `2.5px dashed ${d.ring || "rgba(255,255,255,.8)"}`, boxSizing: "border-box",
       boxShadow: "0 1px 3px rgba(20,24,33,.3)",
     }} />
   );

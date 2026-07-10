@@ -9,6 +9,103 @@ import {
   normalizeFriendCode, isValidFriendCode, prettyFriendCode,
 } from "./account-util.js";
 
+// Small self-contained "add friend by code" button, used next to verified
+// players in the room lobby and in the recent-players list.
+export function AddFriendButton({ friendCode, compact }) {
+  const [state, setState] = useState("idle"); // idle | busy | done | err
+  const [msg, setMsg] = useState(null);
+  const add = async () => {
+    if (state === "busy" || state === "done") return;
+    setState("busy");
+    try {
+      const status = await acct.addFriendByCode(friendCode);
+      const m = addFriendMessage(status);
+      setMsg(m.message);
+      setState(m.ok || status === "already_friends" || status === "already_sent" ? "done" : "err");
+    } catch { setMsg("Couldn’t add. Try again."); setState("err"); }
+  };
+  return (
+    <button className="btn" onClick={() => { S.tap(); buzz(6); add(); }} title={msg || "Add friend"}
+      disabled={state === "busy" || state === "done"}
+      style={{
+        fontFamily: FONT, fontSize: compact ? 11 : 12, fontWeight: 800, padding: compact ? "5px 10px" : "7px 12px",
+        borderRadius: 9, border: `1px solid ${state === "done" ? C.green : C.line}`,
+        background: C.surface, color: state === "done" ? C.green : state === "err" ? C.red : C.accent,
+        cursor: state === "busy" || state === "done" ? "default" : "pointer", whiteSpace: "nowrap",
+      }}>
+      {state === "busy" ? "…" : state === "done" ? "✓" : state === "err" ? "Retry" : "+ Add"}
+    </button>
+  );
+}
+
+// Verified players you've recently shared a table with (stored locally).
+export function RecentPlayers({ players }) {
+  if (!players || players.length === 0) return null;
+  return (
+    <div>
+      <Label>Recent players</Label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {players.slice(0, 6).map(p => (
+          <div key={p.friendCode} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+            <span style={{ fontSize: 18 }}>{p.emoji}</span>
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}</span>
+            <AddFriendButton friendCode={p.friendCode} compact />
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>Players with a ✓ you’ve shared a table with recently.</div>
+    </div>
+  );
+}
+import * as wallet from "./wallet.js";
+import { ledgerLabel } from "./wallet-util.js";
+
+const fmtChips = n => (typeof n === "number" ? n.toLocaleString("en-US") : "…");
+const fmtDelta = n => (n > 0 ? `+${fmtChips(n)}` : fmtChips(n));
+
+// Saved-chips balance + recent activity. Read-only: the balance can only be
+// changed by the server-side wallet functions, never from here.
+function WalletSection() {
+  const [bal, setBal] = useState(null);
+  const [ledger, setLedger] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const [b, l] = await Promise.all([wallet.getBalance(), wallet.listLedger(8)]);
+        if (live) { setBal(b); setLedger(l); }
+      } catch { if (live) setLedger([]); }
+    })();
+    return () => { live = false; };
+  }, []);
+
+  return (
+    <div>
+      <Label>Saved chips</Label>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "14px 16px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+        <span style={{ fontSize: 26, fontWeight: 800, color: C.ink, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{fmtChips(bal)}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: C.muted }}>chips</span>
+      </div>
+      {ledger && ledger.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+          {ledger.map(e => (
+            <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12 }}>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ink }}>{ledgerLabel(e.reason)}</span>
+              <span style={{ fontSize: 12, color: C.faint }}>{new Date(e.created_at).toLocaleDateString()}</span>
+              <span style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: e.delta > 0 ? C.green : e.delta < 0 ? C.red : C.muted }}>{fmtDelta(e.delta)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: C.faint, marginTop: 6, lineHeight: 1.5 }}>
+        Play chips only — they have no cash value and can't be bought or cashed out for money.
+        Use them at solo tables by picking “Saved chips” in table setup.
+      </div>
+    </div>
+  );
+}
+
 const RESEND_COOLDOWN = 30; // seconds
 // Supabase email OTP length is configurable (6–10 digits). Accept the full
 // range so a longer emailed code is not silently truncated on input.
@@ -237,6 +334,9 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
               {profileMsg && <span style={{ fontSize: 13, fontWeight: 700, color: profileMsg.ok ? C.green : C.red }}>{profileMsg.text}</span>}
             </div>
           </div>
+
+          {/* Saved chips wallet */}
+          <WalletSection />
 
           {/* Friend code */}
           <div>

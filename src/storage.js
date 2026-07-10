@@ -13,7 +13,7 @@ export const clearSave = () => del("kicker-save");
 export const loadHistory = () => get("kicker-history", []);
 export const saveHistory = h => set("kicker-history", h);
 
-export const EMPTY_STATS = { hands: 0, won: 0, net: 0, biggestPot: 0, tables: 0, rebuys: 0, tourneys: 0, tourneyWins: 0, bestFinish: 0 };
+export const EMPTY_STATS = { hands: 0, won: 0, net: 0, biggestPot: 0, tables: 0, rebuys: 0, tourneys: 0, tourneyWins: 0, bestFinish: 0, showdowns: 0, fullHouses: 0, quads: 0, straightFlushes: 0, royals: 0 };
 export const loadStats = () => ({ ...EMPTY_STATS, ...get("kicker-stats", {}) });
 export const saveStats = s => set("kicker-stats", s);
 export const resetStats = () => del("kicker-stats");

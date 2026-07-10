@@ -14,6 +14,52 @@ the account layer can crash the game.
 
 ## What was added
 
+- **Saved chips (wallet)** — signed-in players get a persistent play-chip
+  bankroll that follows their account across devices. Solo tables can be
+  played with **practice chips** (free, unchanged behavior) or **saved chips**:
+  the buy-in is debited from the wallet before dealing, rebuys debit again, and
+  leaving the table banks the stack back. The browser can never write a
+  balance — all changes go through `SECURITY DEFINER` functions
+  (`wallet_balance`, `solo_buy_in`, `solo_rebuy`, `solo_cash_out`) that
+  validate ownership, clamp payouts (buy-in × 25 cap), rate-limit sessions
+  (50/24h), and record every change in an idempotent ledger with a reason.
+  Cash-outs that fail to reach the server are queued locally and retried on
+  next launch (safe: settlement is idempotent and server-clamped). Chips are
+  play chips only — no cash value, no purchase, no cash-out to money.
+- **Cosmetics shop & locker** — card backs, chip styles, and table felts,
+  priced in saved chips. The catalog (ids, prices, availability) lives in the
+  `cosmetics` table; ownership is only granted by `shop_purchase()` (debits the
+  wallet through the same idempotent ledger, reason `shop_purchase`) and
+  equipped slots are only written by `equip_cosmetic()` after an ownership
+  check. Visual definitions are client-side keyed by item id (presentation
+  only). Card backs are viewer-side: your equipped design styles every
+  face-down card on your screen — no per-opponent data, no change to the
+  hidden-card redaction. Guests can browse the shop and are prompted to sign
+  in to buy/equip. Defaults always render when nothing is equipped.
+- **Daily reward, quests, XP & achievements** — a daily "draw a card" bonus
+  (the SERVER picks the card and amount in `claim_daily()`; the client only
+  animates the reveal; the `(user, date)` primary key makes double-claims
+  impossible), four small daily quests with server-paid rewards
+  (`claim_quest()`, once per quest per UTC day; progress is a local per-day
+  counter), and XP/levels/achievements DERIVED from the lifetime stats that
+  already sync — no extra storage, nothing to double-award, no currency
+  granted. Reward pool odds are shown in the app. No paid draws, no cash
+  value anywhere.
+- **Multiplayer bankroll tables & table social** — hosts can create a
+  **saved-chips table**: every human's buy-in is escrowed from their wallet by
+  the game server BEFORE they're seated (`mp_buy_in`, service-role only —
+  revoked from browsers), and settled back at their server-computed stack when
+  they leave, disconnect past the grace window, bust (no auto-rebuy), or the
+  room ends (`mp_settle`, idempotent + retry queue). Guests can't join
+  bankroll rooms; config locks at creation so stakes can't change under
+  escrowed players; leaving before the first hand refunds in full. If the
+  game server ever dies before settling, `mp_reclaim()` lets the player
+  recover their buy-in (never winnings) after 24h. Requires
+  `SUPABASE_SERVICE_ROLE_KEY` in the game server env — without it, bankroll
+  tables are unavailable and everything else works as before. Verified
+  tablemates also expose their friend code in room state, so players can add
+  each other from the lobby, and a local **recent players** list on the Play
+  online screen makes it easy to friend people you've played with.
 - **Email confirmation-code sign-in** (`signInWithOtp` / `verifyOtp`). New and
   returning users get a 6-digit code by email and type it into the app.
 - **Player profiles** — display name, emoji avatar, and a shareable 8-character
@@ -39,13 +85,26 @@ the account layer can crash the game.
 | `supabase/schema.sql` | Tables, Row Level Security policies, and `SECURITY DEFINER` functions. Run once per project. |
 | `supabase/functions/send-email/index.ts` | Send Email auth hook (Deno). Verifies the hook signature, renders the branded email, sends via Resend. |
 | `supabase/functions/send-email/email-template.js` | Pure email renderer (HTML + text). Shared with the test suite. |
+| `src/progress.js` | XP/levels/achievements derivations + daily quest progress helpers. Unit-tested. |
+| `src/rewards.js` | Rewards API: daily claim, quest claims, status reads, local progress store. |
+| `src/rewards-ui.jsx` | `RewardsScreen` — daily card reveal + quest list. |
+| `src/cosmetics.js` | Cosmetic visual definitions, equipped-state helpers, local mirror. Unit-tested. |
+| `src/shop.js` | Shop API: catalog/inventory/equipped reads, purchase + equip RPCs. |
+| `src/shop-ui.jsx` | `ShopScreen` — locker-style grid with buy/equip/owned states. |
+| `src/wallet.js` | Wallet API: balance, solo buy-in/rebuy/cash-out RPCs, pending-settle retry queue. |
+| `src/wallet-util.js` | Pure helpers (error copy, ledger labels, queue transitions). Unit-tested. |
 | `src/authClient.js` | Creates the Supabase client from env; `accountsEnabled` flag. Null when unconfigured. |
 | `src/account.js` | Account API: auth, profile, friends, invites. |
 | `src/account-util.js` | Pure helpers (friend-code formatting, friendly error messages). Unit-tested. |
 | `src/account-ui.jsx` | `SignInModal`, `AccountScreen`, `InviteFriends`, `IncomingInvites`. |
 | `src/App.jsx` | Wiring only — home entry, online invites, lobby invite section, auth token on create/join. |
+| `server/wallet.js` | Service-role escrow/settlement calls for bankroll tables (`mp_buy_in` / `mp_settle`). |
 | `server/auth.js` | Game-server-side token verification: confirms the access token with Supabase and reads the account profile. Fail-open to guest. |
 | `tests/account.test.js` | Tests for the email template and account utils. |
+| `tests/wallet.test.js` | Tests for the wallet helpers and pending-settle queue. |
+| `tests/cosmetics.test.js` | Tests for cosmetic lookups, slot mapping, and equip normalization. |
+| `tests/progress.test.js` | Tests for XP/levels, achievements, and daily quest progress. |
+| `tests/bankroll.test.js` | End-to-end bankroll room tests (escrow, settle-once, guest rejection, config lock) with a fake bank. |
 
 ---
 

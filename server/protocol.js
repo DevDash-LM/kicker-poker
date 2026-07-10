@@ -76,7 +76,7 @@ export function validAction(a) {
 
 export function validConfig(c) {
   const BLINDS = [[25, 50], [50, 100], [100, 200], [250, 500]];
-  const def = { sb: 50, bb: 100, stack: 10000, fillAI: false, tournament: false };
+  const def = { sb: 50, bb: 100, stack: 10000, fillAI: false, tournament: false, bankroll: false };
   if (!c || typeof c !== "object") return def;
   const pair = BLINDS.find(([sb, bb]) => sb === c.sb && bb === c.bb) || [def.sb, def.bb];
   return {
@@ -84,5 +84,8 @@ export function validConfig(c) {
     stack: Number.isInteger(c.stack) && c.stack >= 500 && c.stack <= 1000000 ? c.stack : def.stack,
     fillAI: !!c.fillAI,
     tournament: !!c.tournament,
+    // Saved-chips table: every human buys in from their wallet (escrowed by
+    // the server) and is settled back on leave/room end. Guests can't join.
+    bankroll: !!c.bankroll,
   };
 }
