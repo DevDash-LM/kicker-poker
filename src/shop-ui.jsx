@@ -139,7 +139,7 @@ export function ShopScreen({ dark, wide, authUser, walletBal, onBalance, onEquip
   };
 
   return (
-    <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", overflowY: "auto" }}>
+    <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", alignItems: "flex-start", height: "100dvh", overflowY: "auto" }}>
       <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
         <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
           <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Back</button>
