@@ -10,7 +10,25 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "favicon.ico", "favicon-64.png", "apple-touch-icon.png", "robots.txt", "og-image.png"],
+      // Brand logos must be precached too: they are referenced at runtime by the app
+      // (header, card back, empty states) but are NOT auto-globbed into the precache,
+      // so without this they load from network only and show a broken "?" when the
+      // service worker serves the shell offline or from a stale cache.
+      includeAssets: ["favicon.svg", "favicon.ico", "favicon-64.png", "apple-touch-icon.png", "robots.txt", "og-image.png", "logo-mark.png", "logo-lockup.png", "logo-lockup-white.png"],
+      workbox: {
+        // Defense in depth: cache any image request at runtime so future images are
+        // covered too, not just the logos listed above.
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.destination === "image",
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "images",
+              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+        ],
+      },
       manifest: {
         name: "Kicker — Mobile Poker",
         short_name: "Kicker",
