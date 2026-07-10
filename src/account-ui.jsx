@@ -325,7 +325,7 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
                   style={{ width: 40, height: 40, borderRadius: 20, fontSize: 19, cursor: "pointer", border: `2px solid ${emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
               ))}
             </div>
-            <Field value={name} maxLength={21} placeholder="Display name"
+            <Field value={name} maxLength={14} placeholder="Display name"
               onChange={e => setName(e.target.value)} />
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
               <Btn kind="primary" onClick={saveProfile} disabled={!dirty || savingProfile} style={{ flex: 1 }}>
@@ -408,4 +408,98 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
             )}
           </div>
 
-          <Btn kind="danger" onClick={signOut}>Si
+          <Btn kind="danger" onClick={signOut}>Sign out</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Invite friends (inside the room lobby, host + signed-in only)
+// --------------------------------------------------------------------------
+export function InviteFriends({ roomCode }) {
+  const [friends, setFriends] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    acct.listFriends().then(fr => { if (live) { setFriends(fr); setLoading(false); } }).catch(() => live && setLoading(false));
+    return () => { live = false; };
+  }, []);
+
+  const toggle = id => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); setSent(false); return n; });
+
+  const invite = async () => {
+    if (selected.size === 0) return;
+    setBusy(true);
+    try { await acct.createInvites(roomCode, [...selected]); setSent(true); }
+    catch { /* ignore */ }
+    finally { setBusy(false); }
+  };
+
+  if (loading) return <Note>Loading friends…</Note>;
+  if (friends.length === 0) return <div style={{ fontSize: 13, color: C.faint, lineHeight: 1.5 }}>Add friends from your account to invite them here.</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {friends.map(f => {
+        const on = selected.has(f.id);
+        return (
+          <button key={f.id} className="btn" onClick={() => { S.tap(); buzz(6); toggle(f.id); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: on ? `${C.accent}14` : C.surface, border: `1px solid ${on ? C.accent : C.line}`, borderRadius: 14, cursor: "pointer", fontFamily: FONT, textAlign: "left" }}>
+            <span style={{ fontSize: 20 }}>{f.emoji}</span>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{f.display_name}</span>
+            <span style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${on ? C.accent : C.faint}`, background: on ? C.accent : "transparent", color: "#fff", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{on ? "✓" : ""}</span>
+          </button>
+        );
+      })}
+      <Btn kind="accent" onClick={invite} disabled={busy || selected.size === 0}>
+        {sent ? "Invites sent ✓" : busy ? "Sending…" : selected.size ? `Invite ${selected.size} friend${selected.size > 1 ? "s" : ""}` : "Select friends to invite"}
+      </Btn>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Incoming room invites (shown on the "Play online" screen)
+// --------------------------------------------------------------------------
+export function IncomingInvites({ onJoin }) {
+  const [invites, setInvites] = useState([]);
+
+  const load = useCallback(async () => {
+    try { setInvites(await acct.listInvites()); } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 15000); // light poll so new invites appear
+    return () => clearInterval(t);
+  }, [load]);
+
+  const join = async inv => { try { await acct.dismissInvite(inv.id); } catch {} onJoin?.(inv.roomCode); };
+  const dismiss = async inv => { try { await acct.dismissInvite(inv.id); } catch {} setInvites(list => list.filter(i => i.id !== inv.id)); };
+
+  if (invites.length === 0) return null;
+  return (
+    <div>
+      <Label>Room invites</Label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {invites.map(inv => (
+          <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.accent}`, borderRadius: 14 }}>
+            <span style={{ fontSize: 20 }}>{inv.from?.emoji || "🙂"}</span>
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink }}>
+              {inv.from?.display_name || "A friend"} invited you
+              <span style={{ color: C.muted, fontWeight: 600 }}> · {inv.roomCode}</span>
+            </span>
+            <button className="btn" onClick={() => join(inv)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 14px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", cursor: "pointer" }}>Join</button>
+            <button className="btn" onClick={() => dismiss(inv)} aria-label="Dismiss" style={{ fontFamily: FONT, fontSize: 15, fontWeight: 700, padding: "6px 10px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.muted, cursor: "pointer" }}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

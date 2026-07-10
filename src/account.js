@@ -82,7 +82,7 @@ export async function updateProfile({ display_name, emoji }) {
   const user = await getUser();
   if (!user) throw new Error("not signed in");
   const patch = {};
-  if (display_name != null) patch.display_name = String(display_name).slice(0, 21).trim() || "Player";
+  if (display_name != null) patch.display_name = String(display_name).slice(0, 14).trim() || "Player";
   if (emoji != null) patch.emoji = emoji;
   const { data, error } = await sb.from("profiles").update(patch).eq("id", user.id).select("*").single();
   if (error) throw error;
@@ -239,4 +239,13 @@ export async function saveUserState(state) {
     stats: state?.stats ?? {},
     prefs: state?.prefs ?? {},
     settings: state?.settings ?? {},
-  
+    history: state?.history ?? [],
+  };
+  const { data, error } = await sb
+    .from("user_state")
+    .upsert(row, { onConflict: "id" })
+    .select("stats, prefs, settings, history")
+    .single();
+  if (error) throw error;
+  return data;
+}
