@@ -1014,7 +1014,7 @@ export default function App() {
               <>
                 <div>
                   <SetupLabel>Your name</SetupLabel>
-                  <input className="txt" value={profile.name} maxLength={14} placeholder="Guest"
+                  <input className="txt" value={profile.name} maxLength={21} placeholder="Guest"
                     onChange={e => setProfile(pr => ({ ...pr, name: e.target.value }))}
                     style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink }} />
                 </div>

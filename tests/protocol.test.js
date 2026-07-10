@@ -50,7 +50,7 @@ describe("input validation", () => {
   });
   it("sanitizes names", () => {
     expect(sanitizeName("")).toBe("Guest");
-    expect(sanitizeName("x".repeat(40)).length).toBe(14);
+    expect(sanitizeName("x".repeat(40)).length).toBe(21);
     expect(sanitizeName("Bob<>&\"'!")).toBe("Bob'");
   });
   it("rejects malformed actions", () => {
@@ -100,6 +100,4 @@ describe("room codes (makeCode)", () => {
   it("uses all alphabet letters over many samples (no dead characters / bias)", () => {
     const seen = new Set();
     for (let i = 0; i < 20000; i++) makeCode(new Set()).split("").forEach(ch => seen.add(ch));
-    expect(seen.size).toBe(24); // every letter of the 24-char alphabet appears
-  });
-});
+    expect(seen.size).toBe(24); // every letter of the 2
