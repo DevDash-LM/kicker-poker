@@ -55,22 +55,3 @@ export function addFriendMessage(status) {
 export function looksLikeEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
 }
-
-// ---- recent players ---------------------------------------------------------
-// Verified tablemates seen in multiplayer rooms, kept locally so you can add
-// them as friends later. Pure merge so it's easy to test: dedupes by friend
-// code, excludes yourself, newest first, capped.
-
-export const RECENT_PLAYERS_MAX = 12;
-
-export function mergeRecentPlayers(existing, members, now = Date.now()) {
-  const base = Array.isArray(existing) ? existing.filter(p => p && p.friendCode) : [];
-  const seen = (Array.isArray(members) ? members : [])
-    .filter(m => m && m.friendCode && m.account && !m.you)
-    .map(m => ({ name: String(m.name || "Player").slice(0, 14), emoji: m.emoji || "🙂", friendCode: m.friendCode, ts: now }));
-  const byCode = new Map();
-  for (const p of [...seen, ...base]) {
-    if (!byCode.has(p.friendCode)) byCode.set(p.friendCode, p);
-  }
-  return [...byCode.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, RECENT_PLAYERS_MAX);
-}
