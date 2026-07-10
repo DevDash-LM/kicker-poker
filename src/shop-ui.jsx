@@ -65,7 +65,7 @@ function ItemTile({ item, dark, owned, equipped, busy, confirm, canAfford, signe
       <div style={{
         fontSize: 12, fontWeight: 800, borderRadius: 10, padding: "5px 12px", minWidth: 74,
         fontVariantNumeric: "tabular-nums",
-        color: equipped ? "#fff" : disabled && signedIn && !owned && !free ? C.faint : owned || free ? C.ink : "#fff",
+        color: equipped ? "#fff" : disabled && signedIn && !owned && !free ? C.faint : owned || free ? C.ink : C.onPrim,
         background: equipped ? C.accent : owned || free ? C.surface : confirm ? C.gold : C.ink,
         border: owned || free ? `1px solid ${C.line}` : "none",
         opacity: disabled && !equipped ? 0.55 : 1,
