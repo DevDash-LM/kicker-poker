@@ -113,6 +113,30 @@ function SetupLabel({ children }) {
   return <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>{children}</div>;
 }
 
+// Custom starting-stack field. Keeps its own draft text so typing a value that
+// happens to match a preset (e.g. 5000) doesn't wipe the box mid-entry. Only
+// re-syncs when the stack changes from outside (a preset button), not from the
+// user's own keystrokes.
+function StackInput({ value, presets, onChange, min = 500, max = 1000000 }) {
+  const [text, setText] = useState(() => (presets.includes(value) ? "" : String(value)));
+  useEffect(() => {
+    if (parseInt(text, 10) !== value) setText(presets.includes(value) ? "" : String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
+      value={text} min={min} max={max} step={500}
+      onChange={e => { setText(e.target.value); const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) onChange(v); }}
+      onBlur={e => {
+        const v = parseInt(e.target.value, 10);
+        const clamped = Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : 10000;
+        onChange(clamped);
+        setText(presets.includes(clamped) ? "" : String(clamped));
+      }}
+      style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
+  );
+}
+
 function StatRow({ label, value, color }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "13px 16px", background: C.surface, borderRadius: 14, border: `1px solid ${C.line}` }}>
@@ -932,12 +956,7 @@ export default function App() {
               <SetupLabel>Starting stack</SetupLabel>
               <OptionRow options={STACK_PRESETS} value={cfg.stack}
                 onChange={stack => upd({ stack })} render={v => fmt(v)} />
-              <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
-                value={STACK_PRESETS.includes(cfg.stack) ? "" : cfg.stack}
-                min={500} max={1000000} step={500}
-                onChange={e => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) upd({ stack: v }); }}
-                onBlur={e => { const v = parseInt(e.target.value, 10); upd({ stack: Number.isFinite(v) ? Math.max(500, Math.min(1000000, v)) : 10000 }); }}
-                style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
+              <StackInput value={cfg.stack} presets={STACK_PRESETS} onChange={stack => upd({ stack })} />
               <div style={{ fontSize: 12, color: C.faint, marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
                 {Math.round(cfg.stack / cfg.bb)} big blinds deep
               </div>
@@ -1159,12 +1178,7 @@ export default function App() {
                   <SetupLabel>Starting stack</SetupLabel>
                   <OptionRow options={STACK_PRESETS} value={room.config.stack}
                     onChange={stack => sendCfg({ stack })} render={v => fmt(v)} />
-                  <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
-                    value={STACK_PRESETS.includes(room.config.stack) ? "" : room.config.stack}
-                    min={500} max={1000000} step={500}
-                    onChange={e => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) sendCfg({ stack: v }); }}
-                    onBlur={e => { const v = parseInt(e.target.value, 10); sendCfg({ stack: Number.isFinite(v) ? Math.max(500, Math.min(1000000, v)) : 10000 }); }}
-                    style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
+                  <StackInput value={room.config.stack} presets={STACK_PRESETS} onChange={stack => sendCfg({ stack })} />
                 </div>
                 <div>
                   <SetupLabel>Fill empty seats with AI</SetupLabel>
