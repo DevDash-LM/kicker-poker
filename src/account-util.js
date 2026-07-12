@@ -27,6 +27,12 @@ export function authErrorMessage(err) {
     return "Too many attempts. Please wait a minute and try again.";
   if (msg.includes("expired"))
     return "That code has expired. Tap “Resend code” for a fresh one.";
+  if (msg.includes("credential") || (msg.includes("password") && (msg.includes("match") || msg.includes("incorrect"))))
+    return "That email or password didn’t match. Check them, or reset your password.";
+  if (msg.includes("password") && (msg.includes("least") || msg.includes("weak") || msg.includes("short") || msg.includes("character")))
+    return "Choose a stronger password — at least 8 characters.";
+  if (msg.includes("not confirmed") || msg.includes("not been confirmed"))
+    return "Confirm your email first — enter the code we sent you.";
   if (msg.includes("invalid") || msg.includes("otp") || msg.includes("token") || status === 401 || status === 403)
     return "That code didn’t work. Double-check it and try again.";
   if (msg.includes("email") && (msg.includes("invalid") || msg.includes("valid")))
@@ -56,21 +62,12 @@ export function looksLikeEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
 }
 
-// ---- recent players ---------------------------------------------------------
-// Verified tablemates seen in multiplayer rooms, kept locally so you can add
-// them as friends later. Pure merge so it's easy to test: dedupes by friend
-// code, excludes yourself, newest first, capped.
+// Minimum password length. Kept here so the UI and any tests agree.
+export const MIN_PASSWORD = 8;
 
-export const RECENT_PLAYERS_MAX = 12;
-
-export function mergeRecentPlayers(existing, members, now = Date.now()) {
-  const base = Array.isArray(existing) ? existing.filter(p => p && p.friendCode) : [];
-  const seen = (Array.isArray(members) ? members : [])
-    .filter(m => m && m.friendCode && m.account && !m.you)
-    .map(m => ({ name: String(m.name || "Player").slice(0, 14), emoji: m.emoji || "🙂", friendCode: m.friendCode, ts: now }));
-  const byCode = new Map();
-  for (const p of [...seen, ...base]) {
-    if (!byCode.has(p.friendCode)) byCode.set(p.friendCode, p);
-  }
-  return [...byCode.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, RECENT_PLAYERS_MAX);
+// Returns a friendly problem string if the password is too weak, else null.
+export function passwordProblem(pw) {
+  const s = String(pw || "");
+  if (s.length < MIN_PASSWORD) return `Use at least ${MIN_PASSWORD} characters.`;
+  return null;
 }

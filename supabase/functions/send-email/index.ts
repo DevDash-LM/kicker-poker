@@ -21,7 +21,7 @@ const EMAIL_FROM = Deno.env.get("KICKER_EMAIL_FROM") || "Kicker <onboarding@rese
 const PUBLIC_URL = (Deno.env.get("KICKER_PUBLIC_URL") || "").replace(/\/$/, "");
 const HOOK_SECRET = Deno.env.get("SEND_EMAIL_HOOK_SECRET") || "";
 
-const CODE_ACTIONS = new Set(["magiclink", "signup", "email", "otp", "login"]);
+const CODE_ACTIONS = new Set(["magiclink", "signup", "email", "otp", "login", "recovery"]);
 
 async function sendViaResend(to: string, subject: string, html: string, text: string) {
   if (!RESEND_API_KEY) {
