@@ -5,6 +5,7 @@ import {
 import {
   normalizeFriendCode, isValidFriendCode, prettyFriendCode,
   authErrorMessage, addFriendMessage, looksLikeEmail, FRIEND_CODE_RE,
+  passwordProblem, MIN_PASSWORD,
 } from "../src/account-util.js";
 
 describe("branded confirmation email", () => {
@@ -92,5 +93,22 @@ describe("friendly messaging", () => {
     expect(looksLikeEmail("a@b.co")).toBe(true);
     expect(looksLikeEmail("nope")).toBe(false);
     expect(looksLikeEmail("a@b")).toBe(false);
+  });
+});
+
+describe("passwords + auth error mapping", () => {
+  it("flags short passwords and accepts long enough ones", () => {
+    expect(passwordProblem("short")).toMatch(/at least/i);
+    expect(passwordProblem("x".repeat(MIN_PASSWORD - 1))).toMatch(/at least/i);
+    expect(passwordProblem("x".repeat(MIN_PASSWORD))).toBeNull();
+  });
+
+  it("maps credential / password / confirmation errors without leaking raw text", () => {
+    expect(authErrorMessage({ message: "Invalid login credentials" })).toMatch(/didn.t match/i);
+    expect(authErrorMessage({ message: "Password should be at least 6 characters" })).toMatch(/stronger password/i);
+    expect(authErrorMessage({ message: "Email not confirmed" })).toMatch(/confirm your email/i);
+    // An invalid OTP still maps to the code message, not the password one.
+    expect(authErrorMessage({ message: "Invalid OTP" })).toMatch(/didn.t work/i);
+    expect(authErrorMessage({ message: "Invalid login credentials" })).not.toMatch(/credentials/i);
   });
 });

@@ -26,28 +26,80 @@ export function onAuth(cb) {
   return () => data?.subscription?.unsubscribe?.();
 }
 
-// ---- email confirmation-code auth -----------------------------------------
+// ---- password auth + first-signup email confirmation ----------------------
 
-// Send a confirmation code to the email. Works for new and returning users.
-export async function requestCode(email) {
+// Try to sign in with an existing account's password. Returns the auth user on
+// success. Throws on bad credentials / unconfirmed email (callers inspect the
+// error to decide the next step).
+export async function signInWithPassword(email, password) {
   if (!sb) throw new Error("accounts disabled");
-  const { error } = await sb.auth.signInWithOtp({
+  const { data, error } = await sb.auth.signInWithPassword({
     email: String(email).trim(),
-    options: { shouldCreateUser: true },
+    password: String(password),
   });
+  if (error) throw error;
+  return data.user;
+}
+
+// Create a new account with a password. Supabase emails a confirmation code
+// (delivered by the send-email hook) that the user enters once to activate.
+// Returns { exists } - exists:true means the email already has an account
+// (Supabase obfuscates this as a user row with no identities), so no new
+// account was made and no code was sent.
+export async function signUpWithPassword(email, password) {
+  if (!sb) throw new Error("accounts disabled");
+  const { data, error } = await sb.auth.signUp({
+    email: String(email).trim(),
+    password: String(password),
+  });
+  if (error) throw error;
+  const exists = Array.isArray(data?.user?.identities) && data.user.identities.length === 0;
+  return { user: data?.user || null, session: data?.session || null, exists };
+}
+
+// Re-send the first-signup confirmation code (e.g. it expired or never arrived).
+export async function resendSignupCode(email) {
+  if (!sb) throw new Error("accounts disabled");
+  const { error } = await sb.auth.resend({ type: "signup", email: String(email).trim() });
   if (error) throw error;
   return true;
 }
 
-// Verify the code and sign the user in. Returns the auth user.
-export async function verifyCode(email, code) {
+// Verify the first-signup confirmation code and activate + sign in. Returns the
+// auth user. `type` defaults to the signup confirmation flow.
+export async function verifyCode(email, code, type = "signup") {
   if (!sb) throw new Error("accounts disabled");
   const { data, error } = await sb.auth.verifyOtp({
     email: String(email).trim(),
     token: String(code).trim(),
-    type: "email",
+    type,
   });
   if (error) throw error;
+  return data.user;
+}
+
+// ---- password reset (same emailed-code hook, "recovery" action) ------------
+
+// Email a recovery code so the user can set a new password.
+export async function requestPasswordReset(email) {
+  if (!sb) throw new Error("accounts disabled");
+  const { error } = await sb.auth.resetPasswordForEmail(String(email).trim());
+  if (error) throw error;
+  return true;
+}
+
+// Verify the recovery code, which opens a short-lived session, then set the new
+// password. Returns the auth user (now signed in with the new password).
+export async function resetPassword(email, code, newPassword) {
+  if (!sb) throw new Error("accounts disabled");
+  const { data, error } = await sb.auth.verifyOtp({
+    email: String(email).trim(),
+    token: String(code).trim(),
+    type: "recovery",
+  });
+  if (error) throw error;
+  const { error: upErr } = await sb.auth.updateUser({ password: String(newPassword) });
+  if (upErr) throw upErr;
   return data.user;
 }
 
@@ -239,4 +291,10 @@ export async function saveUserState(state) {
     stats: state?.stats ?? {},
     prefs: state?.prefs ?? {},
     settings: state?.settings ?? {},
-  
+
+    history: state?.history ?? [],
+  };
+  const { data, error } = await sb.from("user_state").upsert(row).select().maybeSingle();
+  if (error) throw error;
+  return data;
+}
