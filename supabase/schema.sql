@@ -5,6 +5,11 @@
 -- are blocked by policy, and the sensitive multi-row operations (befriend by
 -- code, accept a request) run through SECURITY DEFINER functions that re-check
 -- ownership internally.
+--
+-- Safe to re-run: every statement is idempotent (create-if-not-exists, drop-then-
+-- create policies, upsert seeds). The cosmetics RPCs explicitly drop any stale
+-- overloads before recreating, so an earlier signature can never linger and make
+-- the function call ambiguous to the API layer.
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -619,6 +624,7 @@ create policy "catalog readable"
 
 -- Seed / upsert the launch catalog. Prices are play chips (starter grant is
 -- 25,000). Default items cost 0 and are always equippable without owning.
+-- on-conflict also re-activates a row so a previously-hidden item reappears.
 insert into public.cosmetics (id, type, name, tier, price, sort) values
   ('cb-classic',  'cardback', 'Kicker Classic', 'default',     0, 0),
   ('cb-crimson',  'cardback', 'Crimson',        'common',   4000, 1),
@@ -638,7 +644,7 @@ insert into public.cosmetics (id, type, name, tier, price, sort) values
   ('ft-onyx',     'felt',     'Onyx',           'epic',    25000, 4)
 on conflict (id) do update
   set name = excluded.name, tier = excluded.tier, price = excluded.price,
-      sort = excluded.sort, type = excluded.type;
+      sort = excluded.sort, type = excluded.type, active = true;
 
 -- ---------------------------------------------------------------------------
 -- cosmetic_inventory — what a user owns. Written only by shop_purchase().
@@ -675,6 +681,23 @@ create policy "read own equipped"
   on public.cosmetic_equipped for select
   to authenticated
   using (auth.uid() = user_id);
+
+-- Drop any stale overloads of the two cosmetics RPCs before recreating them,
+-- so the API layer never has two candidates to choose between (which would make
+-- every purchase/equip fail). create-or-replace alone does NOT remove overloads.
+do $$
+declare r record;
+begin
+  for r in
+    select p.oid::regprocedure as sig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('equip_cosmetic', 'shop_purchase')
+  loop
+    execute 'drop function ' || r.sig || ' cascade';
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- shop_purchase(item): debit the wallet, grant the item. Idempotent — owning
@@ -716,37 +739,59 @@ $$;
 -- ---------------------------------------------------------------------------
 -- equip_cosmetic(slot, item): equip an owned (or default/free) item, or pass
 -- null to clear the slot back to the default look.
+--
+-- NOTE: the parameter `slot` shares its name with the cosmetic_equipped.slot
+-- column. PL/pgSQL runs with variable_conflict = error, so an UNQUALIFIED `slot`
+-- (in INSERT ... VALUES and in ON CONFLICT) is rejected as ambiguous (SQLSTATE
+-- 42702) and the call 400s. Two things keep this correct: the
+-- `#variable_conflict use_column` directive makes the bare `slot` in the ON
+-- CONFLICT target resolve to the COLUMN, and every PARAMETER reference is
+-- qualified as equip_cosmetic.slot / equip_cosmetic.item.
 -- ---------------------------------------------------------------------------
 create or replace function public.equip_cosmetic(slot text, item text default null)
 returns jsonb
 language plpgsql
 security definer set search_path = public
 as $$
+#variable_conflict use_column
 declare
   me uuid := auth.uid();
   c public.cosmetics%rowtype;
 begin
   if me is null then return jsonb_build_object('error', 'unauthorized'); end if;
-  if slot not in ('cardback', 'chips', 'felt') then return jsonb_build_object('error', 'bad_slot'); end if;
-
-  if item is null then
-    delete from public.cosmetic_equipped where user_id = me and slot = equip_cosmetic.slot;
-    return jsonb_build_object('slot', slot, 'item_id', null);
+  if equip_cosmetic.slot not in ('cardback', 'chips', 'felt') then
+    return jsonb_build_object('error', 'bad_slot');
   end if;
 
-  select * into c from public.cosmetics where id = item and active;
-  if not found or c.type <> slot then return jsonb_build_object('error', 'not_found'); end if;
+  -- Clear the slot back to the default look.
+  if equip_cosmetic.item is null then
+    delete from public.cosmetic_equipped ce
+      where ce.user_id = me
+        and ce.slot = equip_cosmetic.slot;
+    return jsonb_build_object('slot', equip_cosmetic.slot, 'item_id', null);
+  end if;
+
+  select * into c
+    from public.cosmetics cm
+    where cm.id = equip_cosmetic.item
+      and cm.active;
+  if not found or c.type <> equip_cosmetic.slot then
+    return jsonb_build_object('error', 'not_found');
+  end if;
+
   if c.price > 0 and not exists (
-    select 1 from public.cosmetic_inventory where user_id = me and item_id = c.id
+    select 1 from public.cosmetic_inventory ci
+      where ci.user_id = me
+        and ci.item_id = c.id
   ) then
     return jsonb_build_object('error', 'not_owned');
   end if;
 
-  insert into public.cosmetic_equipped (user_id, slot, item_id)
-  values (me, slot, c.id)
+  insert into public.cosmetic_equipped as ce (user_id, slot, item_id)
+  values (me, equip_cosmetic.slot, c.id)
   on conflict (user_id, slot) do update set item_id = excluded.item_id;
 
-  return jsonb_build_object('slot', slot, 'item_id', c.id);
+  return jsonb_build_object('slot', equip_cosmetic.slot, 'item_id', c.id);
 end;
 $$;
 
@@ -1065,3 +1110,6 @@ end;
 $$;
 
 grant execute on function public.mp_reclaim(uuid) to authenticated;
+
+-- Make sure the API layer picks up any function/signature changes immediately.
+notify pgrst, 'reload schema';

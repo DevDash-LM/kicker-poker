@@ -67,7 +67,7 @@ export async function loadProfile() {
   if (error) throw error;
   if (!data) {
     // Fallback if the auto-create trigger hasn't run yet.
-    const base = (user.email || "player").split("@")[0].slice(0, 14) || "Player";
+    const base = (user.email || "player").split("@")[0].slice(0, 21) || "Player";
     const ins = await sb.from("profiles").insert({ id: user.id, display_name: base }).select("*").single();
     if (ins.error) throw ins.error;
     data = ins.data;
