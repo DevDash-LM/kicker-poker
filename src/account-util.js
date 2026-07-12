@@ -71,3 +71,27 @@ export function passwordProblem(pw) {
   if (s.length < MIN_PASSWORD) return `Use at least ${MIN_PASSWORD} characters.`;
   return null;
 }
+
+// Merge verified tablemates (players with a friend code you shared a table with)
+// into the locally-remembered "recent players" list. Dedupes by friend code,
+// excludes yourself, stamps each with the merge time, keeps the newest first
+// and caps the list. Robust to junk/missing inputs (returns []).
+export const RECENT_PLAYERS_CAP = 12;
+export function mergeRecentPlayers(existing, members, ts = Date.now()) {
+  const byCode = new Map();
+  if (Array.isArray(existing)) {
+    for (const p of existing) {
+      if (p && p.friendCode) {
+        byCode.set(p.friendCode, { friendCode: p.friendCode, name: p.name, emoji: p.emoji, ts: p.ts ?? 0 });
+      }
+    }
+  }
+  if (Array.isArray(members)) {
+    for (const m of members) {
+      if (m && m.friendCode && !m.you) {
+        byCode.set(m.friendCode, { friendCode: m.friendCode, name: m.name, emoji: m.emoji, ts });
+      }
+    }
+  }
+  return [...byCode.values()].sort((a, b) => b.ts - a.ts).slice(0, RECENT_PLAYERS_CAP);
+}
