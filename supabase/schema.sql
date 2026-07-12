@@ -79,7 +79,7 @@ declare
   base_name text;
 begin
   base_name := split_part(coalesce(new.email, 'player'), '@', 1);
-  base_name := left(regexp_replace(base_name, '[^a-zA-Z0-9 _.-]', '', 'g'), 14);
+  base_name := left(regexp_replace(base_name, '[^a-zA-Z0-9 _.-]', '', 'g'), 21);
   if base_name = '' then base_name := 'Player'; end if;
   insert into public.profiles (id, display_name)
   values (new.id, base_name)
