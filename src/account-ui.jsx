@@ -391,6 +391,9 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState(null);
 
   const [friends, setFriends] = useState([]);
   const [incoming, setIncoming] = useState([]);
@@ -447,6 +450,17 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
   };
 
   const signOut = async () => { await acct.signOut(); onSignedOut?.(); };
+
+  const deleteAccount = async () => {
+    setDeleting(true); setDeleteMsg(null);
+    try {
+      await acct.deleteAccount();
+      onSignedOut?.();
+    } catch {
+      setDeleteMsg("Couldn\u2019t delete your account. Please try again.");
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", position: "fixed", inset: 0, zIndex: 150, overflowY: "auto" }}>
@@ -550,6 +564,35 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
           </div>
 
           <Btn kind="danger" onClick={signOut}>Sign out</Btn>
+
+          {/* Danger zone: permanently delete the account and all its data */}
+          <div style={{ marginTop: 2, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
+            <Label>Delete account</Label>
+            <div style={{ fontSize: 12, color: C.faint, marginBottom: 10 }}>
+              Permanently deletes your account, profile, chips, friends and saved progress. This can’t be undone.
+            </div>
+            {!confirmDelete ? (
+              <button className="btn" onClick={() => { S.tap(); setConfirmDelete(true); }}
+                style={{ width: "100%", fontFamily: FONT, fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12, border: `1px solid ${C.red}`, background: "transparent", color: C.red, cursor: "pointer" }}>
+                Delete my account
+              </button>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Are you sure? This is permanent.</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn" onClick={() => { S.tap(); setConfirmDelete(false); }} disabled={deleting}
+                    style={{ flex: 1, fontFamily: FONT, fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12, border: `1px solid ${C.line}`, background: C.surface, color: C.ink, cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                  <button className="btn" onClick={deleteAccount} disabled={deleting}
+                    style={{ flex: 1, fontFamily: FONT, fontSize: 14, fontWeight: 800, padding: "12px", borderRadius: 12, border: "none", background: C.red, color: "#fff", cursor: deleting ? "default" : "pointer", opacity: deleting ? 0.7 : 1 }}>
+                    {deleting ? "Deleting\u2026" : "Delete forever"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {deleteMsg && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: C.red }}>{deleteMsg}</div>}
+          </div>
         </div>
       </div>
     </div>

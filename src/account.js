@@ -108,6 +108,20 @@ export async function signOut() {
   await sb.auth.signOut();
 }
 
+// Permanently delete the signed-in user's account and ALL their data. Calls a
+// SECURITY DEFINER RPC that removes the auth.users row; every table keyed on the
+// user id cascades, so profile, wallet, friends, cosmetics and saved progress
+// all go with it. Signs out locally afterwards so the app returns to guest mode.
+export async function deleteAccount() {
+  if (!sb) throw new Error("accounts disabled");
+  const user = await getUser();
+  if (!user) throw new Error("not signed in");
+  const { error } = await sb.rpc("delete_own_account");
+  if (error) throw error;
+  await sb.auth.signOut();
+  return true;
+}
+
 // ---- profile --------------------------------------------------------------
 
 // Load (and self-heal) the signed-in user's profile.

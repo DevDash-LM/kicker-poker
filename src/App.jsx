@@ -1388,7 +1388,7 @@ export default function App() {
     setRaiseTo(v => Math.max(minTo, Math.min(maxTo, v + d * sbAmt)));
     S.tick(); buzz(4);
   };
-  const boardW = wide ? (short ? 62 : 88) : 47;
+  const boardW = wide ? (short ? 62 : 88) : 54;
   const boardH = Math.round(boardW * 66 / 47);
   const heroCardW = wide ? boardW : 80;
   const heroCardH = wide ? boardH : 112;
@@ -1659,7 +1659,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            <div style={{ display: "flex", gap: 7, height: boardH }}>
+            <div style={{ display: "flex", gap: wide ? 7 : 6, height: boardH }}>
               {[0, 1, 2, 3, 4].map(i =>
                 game.board[i]
                   ? <CardFace key={`${game.handNo}-${i}`} card={game.board[i]} w={boardW} h={boardH} fs={Math.round(boardW * 18 / 47)}
