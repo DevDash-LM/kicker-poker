@@ -824,13 +824,13 @@ export default function App() {
   if (screen === "home") {
     const currentChips = authUser && walletBal != null ? walletBal : settings.stack;
     const acctChip = (
-      <button className="btn" onClick={() => { S.tap(); if (authUser) setAccountOpen(true); else setSignInOpen(true); }}
+      <button className="acct-chip" onClick={() => { S.tap(); if (authUser) setAccountOpen(true); else setSignInOpen(true); }}
         style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: FONT, minWidth: 0, maxWidth: "64%" }}>
-        <span style={{ fontSize: 18, flexShrink: 0 }}>{authUser ? (accProfile?.emoji || "🙂") : "👤"}</span>
-        <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span className="acct-chip-emoji" style={{ fontSize: 18, flexShrink: 0 }}>{authUser ? (accProfile?.emoji || "🙂") : "👤"}</span>
+        <span className="acct-chip-name" style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {authUser ? (accProfile?.display_name || "Account") : "Guest"}
         </span>
-        <span style={{ fontSize: 13, color: C.muted, flexShrink: 0 }}>›</span>
+        <span className="acct-chip-chevron" style={{ fontSize: 13, color: C.muted, flexShrink: 0 }}>›</span>
       </button>
     );
     return (

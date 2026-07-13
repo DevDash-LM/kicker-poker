@@ -1,0 +1,42 @@
+# Staging copy of Kicker for testing changes before they reach main / production.
+# Run from the worktree you want to test:
+#
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+#
+# It builds the client with the STAGING Supabase env (Vite inlines VITE_* at
+# build time), and publishes a DIFFERENT host port (8788) so it never collides
+# with production's 8787. See docs/STAGING.md for the Caddy subdomain block.
+
+services:
+  kicker-staging:
+    build:
+      context: .
+      args:
+        # These come from --env-file .env.staging (leave blank for guest-only).
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    image: kicker-staging
+    restart: unless-stopped
+    ports:
+      # Exposed on loopback only; the internet reaches it through Caddy/TLS.
+      - "127.0.0.1:8788:8787"
+
+    # Runtime Supabase env. Anon values verify signed-in players; the SERVICE
+    # ROLE key enables saved-chips (bankroll) tables via server/wallet.js.
+    # All come from --env-file .env.staging; leave blank to stay guest-only /
+    # saved-chips-disabled.
+    environment:
+      SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+
+    # If your Caddy runs as a container and reverse-proxies by service name
+    # (e.g. `reverse_proxy kicker-staging:8787`), attach this service to the same
+    # external network Caddy is on by uncommenting below (and set the real name):
+    #
+    # networks:
+    #   - web
+
+# networks:
+#   web:
+#     external: true
