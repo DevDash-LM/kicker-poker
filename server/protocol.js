@@ -83,4 +83,7 @@ export function validConfig(c) {
     sb: pair[0], bb: pair[1],
     stack: Number.isInteger(c.stack) && c.stack >= 500 && c.stack <= 1000000 ? c.stack : def.stack,
     fillAI: !!c.fillAI,
-    tournament: !!c.to
+    tournament: !!c.tournament,
+    bankroll: !!c.bankroll,
+  };
+}

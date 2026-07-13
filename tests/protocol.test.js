@@ -100,4 +100,6 @@ describe("room codes (makeCode)", () => {
   it("uses all alphabet letters over many samples (no dead characters / bias)", () => {
     const seen = new Set();
     for (let i = 0; i < 20000; i++) makeCode(new Set()).split("").forEach(ch => seen.add(ch));
-    expect(seen.size).toBe(24); // every letter of the 2
+    expect(seen.size).toBe(24); // every letter of the 24-char alphabet appears
+  });
+});

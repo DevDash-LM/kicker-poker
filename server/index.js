@@ -388,3 +388,142 @@ export function createServer(port = 8787, {
         if (myRoom()) return send(ws, { type: "error", msg: "Already in a room." });
         const code = String(m.code || "").toUpperCase().trim();
         if (!rooms.has(code)) return send(ws, { type: "error", msg: "Room not found." });
+        const room = rooms.get(code);
+        if (room.status !== "lobby") return send(ws, { type: "error", msg: "That table is already in progress." });
+        if (liveMembers(room).length >= MAX_SEATS) return send(ws, { type: "error", msg: "That table is full." });
+
+        // Mirror `create`: a verified token pins the joiner's identity; any
+        // failure falls back to the client-typed guest profile.
+        const account = m.auth ? await verifyAccount(m.auth) : null;
+        if (ws.readyState !== 1 || myRoom()) return; // re-check after await
+        if (!rooms.has(code) || room.status !== "lobby") return send(ws, { type: "error", msg: "That table is no longer open." });
+        if (liveMembers(room).length >= MAX_SEATS) return send(ws, { type: "error", msg: "That table is full." });
+
+        // Saved-chips tables: escrow the joiner's buy-in before they take a seat.
+        let bankrollSession = null;
+        if (room.config.bankroll) {
+          if (!walletOps.configured) return send(ws, { type: "error", msg: "Saved-chips tables aren't enabled on this server." });
+          if (!account) return send(ws, { type: "error", msg: "Sign in to join a saved-chips table." });
+          const esc = await walletOps.buyIn(account.id, code, room.config.stack);
+          if (ws.readyState !== 1 || myRoom() || !rooms.has(code)) { if (esc?.sessionId) walletOps.settle(esc.sessionId, room.config.stack).catch(() => {}); return; }
+          if (!esc) return send(ws, { type: "error", msg: "Couldn't reach the bank. Try again." });
+          if (esc.error) return send(ws, { type: "error", msg: esc.error === "insufficient" ? "Not enough saved chips for the buy-in." : "Buy-in failed. Try again." });
+          bankrollSession = esc.sessionId;
+        }
+
+        room.members.push({
+          id: deviceId, ws,
+          name: dedupeName(room, sanitizeName(account?.name ?? m.profile?.name)),
+          emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
+          accountId: account?.id || null,
+          friendCode: account?.friendCode || null,
+          bankrollSession, bankrollSettled: false,
+          ready: false, connected: true, lastSeen: Date.now(), seat: liveMembers(room).length, chips: room.config.stack, rebuys: 0, left: false,
+        });
+        memberOf.set(deviceId, code);
+        room.lastActivity = Date.now();
+        broadcastRoom(room);
+        return;
+      }
+
+      if (m.type === "config") {
+        const room = myRoom();
+        if (!room || room.host !== deviceId || room.status !== "lobby") return;
+        // A saved-chips room is locked once created: buy-ins were escrowed
+        // against config.stack, so its config must not change afterward.
+        if (room.config.bankroll) return;
+        const next = validConfig(m.config);
+        next.bankroll = false; // a practice room can never be flipped to saved-chips mid-lobby
+        room.config = next;
+        room.lastActivity = Date.now();
+        broadcastRoom(room);
+        return;
+      }
+
+      if (m.type === "ready") {
+        const room = myRoom();
+        const me = myMember(room);
+        if (!room || !me || room.status !== "lobby") return;
+        me.ready = !!m.ready;
+        room.lastActivity = Date.now();
+        broadcastRoom(room);
+        return;
+      }
+
+      if (m.type === "start") {
+        const room = myRoom();
+        const me = myMember(room);
+        if (!room || !me || room.host !== deviceId || room.status !== "lobby") return;
+        if (!canStart(room)) return;
+        startGame(room); // startGame() broadcasts the room and kicks off the first turn
+        return;
+      }
+
+      if (m.type === "act") {
+        const room = myRoom();
+        const me = myMember(room);
+        if (!room || !me || room.status !== "playing" || !room.game) return;
+        const g = room.game;
+        if (g.stage !== "hand" || g.turn !== me.seat) return; // ignore out-of-turn / stale input
+        const action = validAction(m.action);
+        if (!action) return;
+        room.game = applyAction(g, me.seat, action);
+        afterAction(room);
+        return;
+      }
+
+      if (m.type === "reaction") {
+        const room = myRoom();
+        const me = myMember(room);
+        if (!room || !me || !REACTIONS.includes(m.emoji)) return;
+        liveMembers(room).forEach(x => x.connected && send(x.ws, { type: "reaction", name: me.name, emoji: m.emoji }));
+        return;
+      }
+
+      if (m.type === "leave") {
+        const room = myRoom();
+        const me = myMember(room);
+        if (room && me) { send(ws, { type: "ended" }); removeMember(room, me); }
+        return;
+      }
+    });
+
+    ws.on("close", () => {
+      clearInterval(rateTimer);
+      const room = myRoom();
+      const me = myMember(room);
+      if (!room || !me) return;
+      me.connected = false;
+      me.lastSeen = Date.now();
+      room.lastActivity = Date.now();
+      // Keep the seat: a returning device reclaims it within the reconnect
+      // grace window (dealNext() settles and releases seats that stay dark).
+      if (room.status === "playing" && room.game) broadcastState(room);
+      broadcastRoom(room);
+    });
+  });
+
+  // Backstop cleanup: reap rooms that have seen no activity for a long time
+  // (e.g. a lobby everyone walked away from). Playing rooms whose seats have
+  // all gone dark are also released by the reconnect grace in dealNext().
+  const IDLE_ROOM_MS = 30 * 60 * 1000;
+  const gcTimer = setInterval(() => {
+    const cutoff = Date.now() - IDLE_ROOM_MS;
+    for (const room of [...rooms.values()]) {
+      if (room.lastActivity < cutoff) destroyRoom(room);
+    }
+  }, 60000);
+
+  httpServer.listen(port);
+
+  return {
+    port: () => httpServer.address().port,
+    close: () => {
+      clearInterval(settleTimer);
+      clearInterval(gcTimer);
+      for (const room of rooms.values()) { clearTimeout(room.turnTimer); clearTimeout(room.dealTimer); }
+      try { wss.close(); } catch {}
+      try { httpServer.close(); } catch {}
+    },
+  };
+}
