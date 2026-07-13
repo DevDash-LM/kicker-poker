@@ -27,7 +27,7 @@ export function makeCode(taken) {
 }
 
 export function sanitizeName(s) {
-  return String(s || "").replace(/[^\w\s\-'.]/g, "").trim().slice(0, 14) || "Guest";
+  return String(s || "").replace(/[^\w\s\-'.]/g, "").trim().slice(0, 21) || "Guest";
 }
 
 export function sanitizeAvatar(e) {
@@ -84,8 +84,6 @@ export function validConfig(c) {
     stack: Number.isInteger(c.stack) && c.stack >= 500 && c.stack <= 1000000 ? c.stack : def.stack,
     fillAI: !!c.fillAI,
     tournament: !!c.tournament,
-    // Saved-chips table: every human buys in from their wallet (escrowed by
-    // the server) and is settled back on leave/room end. Guests can't join.
     bankroll: !!c.bankroll,
   };
 }

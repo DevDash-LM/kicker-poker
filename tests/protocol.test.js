@@ -50,7 +50,7 @@ describe("input validation", () => {
   });
   it("sanitizes names", () => {
     expect(sanitizeName("")).toBe("Guest");
-    expect(sanitizeName("x".repeat(40)).length).toBe(14);
+    expect(sanitizeName("x".repeat(40)).length).toBe(21);
     expect(sanitizeName("Bob<>&\"'!")).toBe("Bob'");
   });
   it("rejects malformed actions", () => {

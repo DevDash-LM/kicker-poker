@@ -7,6 +7,7 @@ import * as acct from "./account.js";
 import {
   authErrorMessage, addFriendMessage, looksLikeEmail,
   normalizeFriendCode, isValidFriendCode, prettyFriendCode,
+  passwordProblem, MIN_PASSWORD,
 } from "./account-util.js";
 
 // Small self-contained "add friend by code" button, used next to verified
@@ -144,12 +145,22 @@ function Note({ color, children }) {
 }
 
 // --------------------------------------------------------------------------
-// Sign-in: email step -> confirmation-code step
+// Auth: one smart email + password screen.
+//   - Existing account + right password -> straight in.
+//   - New email -> creates the account and emails a one-time confirmation code
+//     (used only on this first sign-up). After verifying, the password works
+//     everywhere.
+//   - "Forgot password?" emails a reset code (same send-email hook) to set a
+//     new password.
 // --------------------------------------------------------------------------
 export function SignInModal({ onClose, onSignedIn }) {
-  const [step, setStep] = useState("email");
+  const [step, setStep] = useState("auth"); // auth | verify | reset
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [ok, setOk] = useState(null);
@@ -161,23 +172,38 @@ export function SignInModal({ onClose, onSignedIn }) {
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  const send = async () => {
-    if (!looksLikeEmail(email)) { setErr("That email doesn’t look right. Please check it."); return; }
+  const em = () => email.trim();
+
+  // Continue: sign in if the account exists, otherwise create it + send a code.
+  const submit = async () => {
+    if (!looksLikeEmail(em())) { setErr("That email doesn’t look right. Please check it."); return; }
+    const pw = passwordProblem(password);
+    if (pw) { setErr(pw); return; }
     setBusy(true); setErr(null); setOk(null);
     try {
-      await acct.requestCode(email);
-      setStep("code"); setCooldown(RESEND_COOLDOWN);
-      setOk(`We sent a code to ${email.trim()}.`);
-    } catch (e) { setErr(authErrorMessage(e)); }
-    finally { setBusy(false); }
-  };
-
-  const resend = async () => {
-    if (cooldown > 0 || busy) return;
-    setBusy(true); setErr(null);
-    try { await acct.requestCode(email); setCooldown(RESEND_COOLDOWN); setOk("New code sent."); }
-    catch (e) { setErr(authErrorMessage(e)); }
-    finally { setBusy(false); }
+      const user = await acct.signInWithPassword(em(), password);
+      setOk("Signed in!"); S.win?.(); onSignedIn?.(user); return;
+    } catch (e) {
+      const m = String(e?.message || e?.msg || "").toLowerCase();
+      if (m.includes("not confirmed") || m.includes("not been confirmed")) {
+        try { await acct.resendSignupCode(em()); } catch { /* code may already be valid */ }
+        setStep("verify"); setCooldown(RESEND_COOLDOWN);
+        setOk(`Confirm your email — we sent a code to ${em()}.`);
+        setBusy(false); return;
+      }
+      // Bad credentials: either a brand-new email, or a wrong password on an
+      // existing account. signUp tells them apart.
+      try {
+        const { exists } = await acct.signUpWithPassword(em(), password);
+        if (exists) {
+          setErr("That email or password didn’t match. Reset your password if you’ve forgotten it.");
+          setBusy(false); return;
+        }
+        setStep("verify"); setCooldown(RESEND_COOLDOWN);
+        setOk(`We sent a confirmation code to ${em()}.`);
+        setBusy(false); return;
+      } catch (e2) { setErr(authErrorMessage(e2)); setBusy(false); }
+    }
   };
 
   const verify = async () => {
@@ -185,37 +211,100 @@ export function SignInModal({ onClose, onSignedIn }) {
     if (c.length < CODE_MIN) { setErr(`Enter the ${CODE_MIN}-digit code from your email.`); return; }
     setBusy(true); setErr(null);
     try {
-      const user = await acct.verifyCode(email, c);
-      setOk("Signed in!");
-      S.win?.();
-      onSignedIn?.(user);
+      let user;
+      try { user = await acct.verifyCode(em(), c, "signup"); }
+      catch { user = await acct.verifyCode(em(), c, "email"); }
+      setOk("You’re in!"); S.win?.(); onSignedIn?.(user);
     } catch (e) { setErr(authErrorMessage(e)); setBusy(false); }
   };
+
+  const resendSignup = async () => {
+    if (cooldown > 0 || busy) return;
+    setBusy(true); setErr(null);
+    try { await acct.resendSignupCode(em()); setCooldown(RESEND_COOLDOWN); setOk("New code sent."); }
+    catch (e) { setErr(authErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const sendReset = async () => {
+    if (!looksLikeEmail(em())) { setErr("That email doesn’t look right. Please check it."); return; }
+    setBusy(true); setErr(null); setOk(null);
+    try {
+      await acct.requestPasswordReset(em());
+      setResetSent(true); setCooldown(RESEND_COOLDOWN);
+      setOk(`We sent a reset code to ${em()}.`);
+    } catch (e) { setErr(authErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const doReset = async () => {
+    const c = code.trim();
+    if (c.length < CODE_MIN) { setErr(`Enter the ${CODE_MIN}-digit code from your email.`); return; }
+    const pw = passwordProblem(newPassword);
+    if (pw) { setErr(pw); return; }
+    setBusy(true); setErr(null);
+    try {
+      const user = await acct.resetPassword(em(), c, newPassword);
+      setOk("Password updated!"); S.win?.(); onSignedIn?.(user);
+    } catch (e) { setErr(authErrorMessage(e)); setBusy(false); }
+  };
+
+  const goAuth = () => { setStep("auth"); setErr(null); setOk(null); setCode(""); setResetSent(false); };
+
+  const PwToggle = () => (
+    <button type="button" onClick={() => setShowPw(v => !v)}
+      style={{ position: "absolute", top: "50%", right: 12, transform: "translateY(-50%)", background: "none", border: "none", color: C.muted, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: FONT, padding: 4 }}>
+      {showPw ? "Hide" : "Show"}
+    </button>
+  );
 
   return (
     <Overlay onClose={busy ? undefined : onClose}>
       <div style={{ marginBottom: 16 }}><Logo height={30} /></div>
-      {step === "email" ? (
+
+      {step === "auth" && (
         <>
           <div style={{ textAlign: "center", fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Sign in to Kicker</div>
-          <Note>Save your profile, friends, and progress across devices.</Note>
+          <Note>Sign in, or enter a new email to create an account.</Note>
           <div style={{ marginTop: 18 }}>
             <Label>Email</Label>
             <Field type="email" inputMode="email" autoComplete="email" placeholder="you@example.com"
               value={email} autoCapitalize="off" autoCorrect="off"
               onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && send()} />
+              onKeyDown={e => e.key === "Enter" && submit()} />
           </div>
+          <div style={{ marginTop: 12 }}>
+            <Label>Password</Label>
+            <div style={{ position: "relative" }}>
+              <Field type={showPw ? "text" : "password"} autoComplete="current-password" placeholder="Your password"
+                value={password} onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && submit()} style={{ paddingRight: 56 }} />
+              <PwToggle />
+            </div>
+            <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>New here? Pick a password ({MIN_PASSWORD}+ characters) and we’ll email a one-time code to confirm.</div>
+          </div>
+          {ok && !err && <div style={{ marginTop: 12 }}><Note color={C.green}>{ok}</Note></div>}
           {err && <div style={{ marginTop: 12 }}><Note color={C.red}>{err}</Note></div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 18 }}>
-            <Btn kind="accent" onClick={send} disabled={busy}>{busy ? "Sending…" : "Send me a code"}</Btn>
-            <Btn onClick={onClose} disabled={busy}>Keep playing as guest</Btn>
+            <Btn kind="accent" onClick={submit} disabled={busy}>{busy ? "Please wait…" : "Continue"}</Btn>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <button type="button" onClick={() => { setStep("reset"); setErr(null); setOk(null); setCode(""); setResetSent(false); }}
+                style={{ background: "none", border: "none", color: C.accent, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT, padding: "6px 0" }}>
+                Forgot password?
+              </button>
+              <button type="button" onClick={onClose} disabled={busy}
+                style={{ background: "none", border: "none", color: C.muted, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT, padding: "6px 0" }}>
+                Play as guest
+              </button>
+            </div>
           </div>
         </>
-      ) : (
+      )}
+
+      {step === "verify" && (
         <>
-          <div style={{ textAlign: "center", fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Enter your code</div>
-          <Note>Enter the code we sent to {email.trim()}.</Note>
+          <div style={{ textAlign: "center", fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Confirm your email</div>
+          <Note>Enter the code we sent to {em()}. You’ll only need this once.</Note>
           <div style={{ marginTop: 18 }}>
             <Label>Confirmation code</Label>
             <Field type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="123456"
@@ -227,12 +316,64 @@ export function SignInModal({ onClose, onSignedIn }) {
           {ok && !err && <div style={{ marginTop: 10 }}><Note color={C.green}>{ok}</Note></div>}
           {err && <div style={{ marginTop: 10 }}><Note color={C.red}>{err}</Note></div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-            <Btn kind="accent" onClick={verify} disabled={busy || code.length < CODE_MIN}>{busy ? "Signing in…" : "Sign in"}</Btn>
+            <Btn kind="accent" onClick={verify} disabled={busy || code.length < CODE_MIN}>{busy ? "Confirming…" : "Confirm & sign in"}</Btn>
             <div style={{ display: "flex", gap: 8 }}>
-              <Btn onClick={() => { setStep("email"); setErr(null); setOk(null); setCode(""); }} disabled={busy} style={{ fontSize: 13, padding: "11px 0" }}>Change email</Btn>
-              <Btn onClick={resend} disabled={busy || cooldown > 0} style={{ fontSize: 13, padding: "11px 0" }}>
+              <Btn onClick={goAuth} disabled={busy} style={{ fontSize: 13, padding: "11px 0" }}>Back</Btn>
+              <Btn onClick={resendSignup} disabled={busy || cooldown > 0} style={{ fontSize: 13, padding: "11px 0" }}>
                 {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
               </Btn>
+            </div>
+          </div>
+        </>
+      )}
+
+      {step === "reset" && (
+        <>
+          <div style={{ textAlign: "center", fontSize: 19, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Reset your password</div>
+          <Note>{resetSent ? `Enter the code we sent to ${em()} and choose a new password.` : "We’ll email you a code to set a new password."}</Note>
+          {!resetSent ? (
+            <div style={{ marginTop: 18 }}>
+              <Label>Email</Label>
+              <Field type="email" inputMode="email" autoComplete="email" placeholder="you@example.com"
+                value={email} autoCapitalize="off" autoCorrect="off"
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && sendReset()} />
+            </div>
+          ) : (
+            <>
+              <div style={{ marginTop: 18 }}>
+                <Label>Reset code</Label>
+                <Field type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="123456"
+                  value={code} maxLength={CODE_MAX}
+                  onChange={e => setCode(e.target.value.replace(/[^0-9]/g, "").slice(0, CODE_MAX))}
+                  style={{ letterSpacing: ".4em", fontWeight: 800, textAlign: "center", fontSize: 22 }} />
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <Label>New password</Label>
+                <div style={{ position: "relative" }}>
+                  <Field type={showPw ? "text" : "password"} autoComplete="new-password" placeholder={`At least ${MIN_PASSWORD} characters`}
+                    value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && doReset()} style={{ paddingRight: 56 }} />
+                  <PwToggle />
+                </div>
+              </div>
+            </>
+          )}
+          {ok && !err && <div style={{ marginTop: 12 }}><Note color={C.green}>{ok}</Note></div>}
+          {err && <div style={{ marginTop: 12 }}><Note color={C.red}>{err}</Note></div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 18 }}>
+            {!resetSent ? (
+              <Btn kind="accent" onClick={sendReset} disabled={busy}>{busy ? "Sending…" : "Send reset code"}</Btn>
+            ) : (
+              <Btn kind="accent" onClick={doReset} disabled={busy || code.length < CODE_MIN}>{busy ? "Updating…" : "Set new password"}</Btn>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={goAuth} disabled={busy} style={{ fontSize: 13, padding: "11px 0" }}>Back to sign in</Btn>
+              {resetSent && (
+                <Btn onClick={sendReset} disabled={busy || cooldown > 0} style={{ fontSize: 13, padding: "11px 0" }}>
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+                </Btn>
+              )}
             </div>
           </div>
         </>
@@ -322,10 +463,10 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
               {AVATARS.map(e => (
                 <button key={e} className="btn" onClick={() => { S.tap(); setEmoji(e); }}
-                  style={{ width: 40, height: 40, borderRadius: 20, fontSize: 19, cursor: "pointer", border: `2px solid ${emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
+                  style={{ flex: "1 1 38px", minWidth: 38, maxWidth: 48, aspectRatio: "1 / 1", borderRadius: "50%", fontSize: 19, cursor: "pointer", border: `2px solid ${emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
               ))}
             </div>
-            <Field value={name} maxLength={14} placeholder="Display name"
+            <Field value={name} maxLength={21} placeholder="Display name"
               onChange={e => setName(e.target.value)} />
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
               <Btn kind="primary" onClick={saveProfile} disabled={!dirty || savingProfile} style={{ flex: 1 }}>
@@ -416,87 +557,92 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
 }
 
 // --------------------------------------------------------------------------
-// Invite friends (inside the room lobby, host + signed-in only)
+// Room invites: invite accepted friends to a live room, and show the invites
+// friends have sent you.
 // --------------------------------------------------------------------------
+
+// Host tool shown in the room lobby: invite your accepted friends to this room
+// by its code. Collapsed by default so it doesn't crowd the lobby.
 export function InviteFriends({ roomCode }) {
-  const [friends, setFriends] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(() => new Set());
-  const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [friends, setFriends] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [invited, setInvited] = useState({}); // friendId -> "busy" | "done"
 
   useEffect(() => {
     let live = true;
-    acct.listFriends().then(fr => { if (live) { setFriends(fr); setLoading(false); } }).catch(() => live && setLoading(false));
+    (async () => {
+      try { const f = await acct.listFriends(); if (live) setFriends(f); }
+      catch { if (live) setFriends([]); }
+    })();
     return () => { live = false; };
   }, []);
 
-  const toggle = id => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); setSent(false); return n; });
-
-  const invite = async () => {
-    if (selected.size === 0) return;
-    setBusy(true);
-    try { await acct.createInvites(roomCode, [...selected]); setSent(true); }
-    catch { /* ignore */ }
-    finally { setBusy(false); }
+  const invite = async (id) => {
+    if (invited[id]) return;
+    setInvited(m => ({ ...m, [id]: "busy" }));
+    try { await acct.createInvites(roomCode, [id]); setInvited(m => ({ ...m, [id]: "done" })); }
+    catch { setInvited(m => { const n = { ...m }; delete n[id]; return n; }); }
   };
 
-  if (loading) return <Note>Loading friends…</Note>;
-  if (friends.length === 0) return <div style={{ fontSize: 13, color: C.faint, lineHeight: 1.5 }}>Add friends from your account to invite them here.</div>;
-
+  if (!friends || friends.length === 0) return null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {friends.map(f => {
-        const on = selected.has(f.id);
-        return (
-          <button key={f.id} className="btn" onClick={() => { S.tap(); buzz(6); toggle(f.id); }}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: on ? `${C.accent}14` : C.surface, border: `1px solid ${on ? C.accent : C.line}`, borderRadius: 14, cursor: "pointer", fontFamily: FONT, textAlign: "left" }}>
-            <span style={{ fontSize: 20 }}>{f.emoji}</span>
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{f.display_name}</span>
-            <span style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${on ? C.accent : C.faint}`, background: on ? C.accent : "transparent", color: "#fff", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{on ? "✓" : ""}</span>
-          </button>
-        );
-      })}
-      <Btn kind="accent" onClick={invite} disabled={busy || selected.size === 0}>
-        {sent ? "Invites sent ✓" : busy ? "Sending…" : selected.size ? `Invite ${selected.size} friend${selected.size > 1 ? "s" : ""}` : "Select friends to invite"}
-      </Btn>
+    <div>
+      <button className="btn" onClick={() => { S.tap(); buzz(6); setOpen(o => !o); }}
+        style={{ width: "100%", fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "10px 0", borderRadius: 12, border: `1px solid ${C.line}`, background: C.surface, color: C.ink, cursor: "pointer" }}>
+        {open ? "Hide friends" : "Invite friends"}
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          {friends.map(f => {
+            const st = invited[f.id];
+            return (
+              <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+                <span style={{ fontSize: 18 }}>{f.emoji}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.display_name}</span>
+                <button className="btn" onClick={() => { S.tap(); buzz(6); invite(f.id); }} disabled={!!st}
+                  style={{ fontFamily: FONT, fontSize: 12, fontWeight: 800, padding: "6px 12px", borderRadius: 9, border: `1px solid ${st === "done" ? C.green : C.line}`, background: C.surface, color: st === "done" ? C.green : C.accent, cursor: st ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                  {st === "busy" ? "…" : st === "done" ? "Invited ✓" : "Invite"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// --------------------------------------------------------------------------
-// Incoming room invites (shown on the "Play online" screen)
-// --------------------------------------------------------------------------
+// Pending room invites friends have sent you. Tap Join to jump straight into
+// their table; dismiss to clear one. Renders nothing when there are none.
 export function IncomingInvites({ onJoin }) {
-  const [invites, setInvites] = useState([]);
+  const [invites, setInvites] = useState(null);
 
-  const load = useCallback(async () => {
-    try { setInvites(await acct.listInvites()); } catch { /* ignore */ }
+  const refresh = useCallback(async () => {
+    try { setInvites(await acct.listInvites()); } catch { setInvites([]); }
   }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 15000); // light poll so new invites appear
-    return () => clearInterval(t);
-  }, [load]);
+  const dismiss = async (id) => {
+    setInvites(list => (list || []).filter(i => i.id !== id));
+    try { await acct.dismissInvite(id); } catch { refresh(); }
+  };
 
-  const join = async inv => { try { await acct.dismissInvite(inv.id); } catch {} onJoin?.(inv.roomCode); };
-  const dismiss = async inv => { try { await acct.dismissInvite(inv.id); } catch {} setInvites(list => list.filter(i => i.id !== inv.id)); };
-
-  if (invites.length === 0) return null;
+  if (!invites || invites.length === 0) return null;
   return (
     <div>
-      <Label>Room invites</Label>
+      <Label>Table invites</Label>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {invites.map(inv => (
-          <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.accent}`, borderRadius: 14 }}>
+          <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
             <span style={{ fontSize: 20 }}>{inv.from?.emoji || "🙂"}</span>
-            <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink }}>
-              {inv.from?.display_name || "A friend"} invited you
-              <span style={{ color: C.muted, fontWeight: 600 }}> · {inv.roomCode}</span>
-            </span>
-            <button className="btn" onClick={() => join(inv)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 14px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", cursor: "pointer" }}>Join</button>
-            <button className="btn" onClick={() => dismiss(inv)} aria-label="Dismiss" style={{ fontFamily: FONT, fontSize: 15, fontWeight: 700, padding: "6px 10px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.muted, cursor: "pointer" }}>✕</button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.from?.display_name || "A friend"}</div>
+              <div style={{ fontSize: 12, color: C.faint, letterSpacing: ".08em", fontVariantNumeric: "tabular-nums" }}>Table {inv.roomCode}</div>
+            </div>
+            <button className="btn" onClick={() => { S.tap(); buzz(6); onJoin?.(inv.roomCode); }}
+              style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 14px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", cursor: "pointer" }}>Join</button>
+            <button className="btn" onClick={() => { S.tap(); dismiss(inv.id); }} aria-label="Dismiss"
+              style={{ fontFamily: FONT, fontSize: 18, lineHeight: 1, padding: "4px 8px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.muted, cursor: "pointer" }}>&times;</button>
           </div>
         ))}
       </div>

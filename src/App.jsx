@@ -123,17 +123,21 @@ function StackInput({ value, presets, onChange, min = 500, max = 1000000 }) {
     if (parseInt(text, 10) !== value) setText(presets.includes(value) ? "" : String(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
+  // Empty box with no preset selected = no amount chosen yet -> flag it red,
+  // but let the field stay fully empty so the player can clear and retype.
+  const invalid = text.trim() === "" && !presets.includes(value);
   return (
     <input type="number" inputMode="numeric" className="txt" placeholder="Custom amount"
       value={text} min={min} max={max} step={500}
       onChange={e => { setText(e.target.value); const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) onChange(v); }}
       onBlur={e => {
         const v = parseInt(e.target.value, 10);
-        const clamped = Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : 10000;
+        if (!Number.isFinite(v)) { setText(""); return; } // allow a fully empty field
+        const clamped = Math.max(min, Math.min(max, v));
         onChange(clamped);
         setText(presets.includes(clamped) ? "" : String(clamped));
       }}
-      style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink, marginTop: 8 }} />
+      style={{ background: C.surface, border: `1.5px solid ${invalid ? C.red : C.line}`, color: invalid ? C.red : C.ink, marginTop: 8 }} />
   );
 }
 
@@ -818,6 +822,17 @@ export default function App() {
   ) : null;
 
   if (screen === "home") {
+    const currentChips = authUser && walletBal != null ? walletBal : settings.stack;
+    const acctChip = (
+      <button className="btn" onClick={() => { S.tap(); if (authUser) setAccountOpen(true); else setSignInOpen(true); }}
+        style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: FONT, minWidth: 0, maxWidth: "64%" }}>
+        <span style={{ fontSize: 18, flexShrink: 0 }}>{authUser ? (accProfile?.emoji || "🙂") : "👤"}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {authUser ? (accProfile?.display_name || "Account") : "Guest"}
+        </span>
+        <span style={{ fontSize: 13, color: C.muted, flexShrink: 0 }}>›</span>
+      </button>
+    );
     return (
       <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center", overflow: wide ? undefined : "hidden" }}>
         <div style={{ width: "100%", maxWidth: wide ? 920 : 420, height: wide ? undefined : "100dvh", display: "flex", flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "stretch", gap: wide ? 56 : 0, padding: "0 24px", paddingTop: wide ? "env(safe-area-inset-top)" : 0, position: "relative" }}>
@@ -854,34 +869,25 @@ export default function App() {
             </p>
           </div>
           <div className="rise-in" style={{ width: wide ? 360 : "auto", flexShrink: 0, paddingBottom: wide ? 0 : "calc(env(safe-area-inset-bottom) + 18px)", display: "flex", flexDirection: "column", gap: 10, animationDelay: ".16s" }}>
-            {authUser && walletBal != null && (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
-                <span style={{ color: C.muted, fontSize: 14 }}>Saved chips</span>
-                <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(walletBal)}</span>
-              </div>
-            )}
             {saved?.game ? (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
-                  <span style={{ color: C.muted, fontSize: 14 }}>Table in progress · Hand #{saved.game.handNo}{saved.game.wallet ? " · Saved chips" : ""}</span>
-                  <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(saved.game.players[0].chips)} chips</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
+                  {accountsEnabled ? acctChip : <span style={{ color: C.muted, fontSize: 14 }}>Table in progress · Hand #{saved.game.handNo}{saved.game.wallet ? " · Saved chips" : ""}</span>}
+                  <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{fmt(saved.game.players[0].chips)} chips</span>
                 </div>
                 <Btn kind="primary" onClick={resumeTable} style={{ padding: "17px 0", fontSize: 16 }}>Resume table</Btn>
                 <Btn onClick={() => setScreen("setup")}>New table</Btn>
               </>
             ) : (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
-                  <span style={{ color: C.muted, fontSize: 14 }}>{settings.tournament ? "Tournament" : "Cash game"} · {settings.ai + 1}-handed</span>
-                  <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>Blinds {settings.sb}/{settings.bb}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 16px", background: C.surface, borderRadius: 16, border: `1px solid ${C.line}` }}>
+                  {accountsEnabled ? acctChip : <span style={{ color: C.muted, fontSize: 14 }}>{settings.tournament ? "Tournament" : "Cash game"} · {settings.ai + 1}-handed</span>}
+                  <span style={{ color: C.ink, fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{fmt(currentChips)} chips</span>
                 </div>
                 <Btn kind="primary" onClick={() => setScreen("setup")} style={{ padding: "17px 0", fontSize: 16 }}>Take a seat</Btn>
               </>
             )}
             <Btn kind="accent" onClick={() => { setNetErr(null); setScreen("online"); }}>Play online</Btn>
-            {accountsEnabled && (authUser
-              ? <Btn onClick={() => setAccountOpen(true)}>{accProfile ? `Account · ${accProfile.display_name}` : "Account"}</Btn>
-              : <Btn onClick={() => setSignInOpen(true)}>Sign in to Kicker</Btn>)}
             {accountsEnabled && (
               <div style={{ display: "flex", gap: 10 }}>
                 <Btn onClick={() => setScreen("shop")} style={{ fontSize: 14, padding: "12px 0" }}>Shop</Btn>
@@ -1014,7 +1020,7 @@ export default function App() {
               <>
                 <div>
                   <SetupLabel>Your name</SetupLabel>
-                  <input className="txt" value={profile.name} maxLength={14} placeholder="Guest"
+                  <input className="txt" value={profile.name} maxLength={21} placeholder="Guest"
                     onChange={e => setProfile(pr => ({ ...pr, name: e.target.value }))}
                     style={{ background: C.surface, border: `1.5px solid ${C.line}`, color: C.ink }} />
                 </div>
@@ -1023,7 +1029,7 @@ export default function App() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {AVATARS.map(e => (
                       <button key={e} className="btn" onClick={() => { S.tap(); setProfile(pr => ({ ...pr, emoji: e })); }}
-                        style={{ width: 44, height: 44, borderRadius: 22, fontSize: 20, cursor: "pointer", border: `2px solid ${profile.emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
+                        style={{ flex: "1 1 40px", minWidth: 40, maxWidth: 52, aspectRatio: "1 / 1", borderRadius: "50%", fontSize: 20, cursor: "pointer", border: `2px solid ${profile.emoji === e ? C.accent : C.line}`, background: C.surface }}>{e}</button>
                     ))}
                   </div>
                 </div>
