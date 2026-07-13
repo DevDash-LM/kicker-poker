@@ -838,20 +838,32 @@ export default function App() {
         <div style={{ width: "100%", maxWidth: wide ? 920 : 420, height: wide ? undefined : "100dvh", display: "flex", flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "stretch", gap: wide ? 56 : 0, padding: "0 24px", paddingTop: wide ? "env(safe-area-inset-top)" : 0, position: "relative" }}>
           {wide ? (
             <>
-              <button onClick={toggleDark} aria-label="Toggle dark mode"
-                style={{ position: "absolute", top: 18, right: 20, background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
-                {dark ? "☀︎" : "☾"}
-              </button>
+              <div style={{ position: "absolute", top: 18, right: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 4, fontFamily: FONT, opacity: muted ? 0.45 : 1 }}>
+                  {muted ? "🔇" : "🔊"}
+                </button>
+                <button onClick={toggleDark} aria-label="Toggle dark mode"
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
+                  {dark ? "☀︎" : "☾"}
+                </button>
+              </div>
               <img src="/logo-mark.png" alt="Kicker" className="brand-mark"
                 style={{ position: "absolute", top: 16, left: 22, height: 30, width: "auto" }} />
             </>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, paddingTop: "calc(env(safe-area-inset-top) + 16px)" }}>
               <img src="/logo-mark.png" alt="Kicker" className="brand-mark" style={{ height: 28, width: "auto" }} />
-              <button onClick={toggleDark} aria-label="Toggle dark mode"
-                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
-                {dark ? "☀︎" : "☾"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 4, fontFamily: FONT, opacity: muted ? 0.45 : 1 }}>
+                  {muted ? "🔇" : "🔊"}
+                </button>
+                <button onClick={toggleDark} aria-label="Toggle dark mode"
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, color: C.muted, padding: 4, fontFamily: FONT }}>
+                  {dark ? "☀︎" : "☾"}
+                </button>
+              </div>
             </div>
           )}
           {accountOverlays}
