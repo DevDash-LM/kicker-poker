@@ -113,3 +113,12 @@ input.txt:focus { border-color: #2E5BFF !important; }
 }
 .brand-mark { opacity: .92; }
 body.dark .brand-mark { filter: invert(1); opacity: .95; }
+
+.acct-chip-emoji, .acct-chip-chevron { display: inline-block; transition: transform .18s cubic-bezier(.34,1.56,.64,1); }
+.acct-chip-name { transition: color .18s ease; }
+@media (hover: hover) {
+  .acct-chip:hover .acct-chip-emoji { transform: scale(1.15); }
+  .acct-chip:hover .acct-chip-chevron { transform: translateX(3px); }
+  .acct-chip:hover .acct-chip-name { color: #2E5BFF !important; }
+  body.dark .acct-chip:hover .acct-chip-name { color: #5B7FFF !important; }
+}
