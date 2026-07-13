@@ -1,7 +1,7 @@
 import http from "http";
 import { readFileSync, existsSync, statSync } from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { WebSocketServer } from "ws";
 import { startHand, applyAction, decideAI, stepRunout, AI_SEED, secureInt, aliveCount } from "../src/game/logic.js";
 import {
@@ -526,4 +526,12 @@ export function createServer(port = 8787, {
       try { httpServer.close(); } catch {}
     },
   };
+}
+
+// Start directly when run as a script (Docker CMD / `npm run server`); tests
+// import createServer() and start their own instance instead.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const port = Number(process.env.PORT) || 8787;
+  createServer(port);
+  console.log(`Kicker server listening on :${port} (ws path /ws)`);
 }
