@@ -206,6 +206,24 @@ export default function App() {
   const wide = useMedia("(min-width: 700px)");
   const short = useMedia("(max-height: 500px)");
 
+  // --- Desktop menu layout -------------------------------------------------
+  // The menu screens (setup, online, lobby, history, stats) share one shell.
+  // On mobile that shell is a full-height column that grows the page. On
+  // desktop we render it as a bounded panel that is vertically centered in the
+  // viewport and never scrolls the page — the panel body scrolls internally
+  // only when its content genuinely overflows. This makes the desktop view a
+  // real desktop layout rather than a widened phone.
+  const menuStageStyle = {
+    background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center",
+    ...(wide && { alignItems: "center", height: "100dvh", overflow: "hidden" }),
+  };
+  const menuPanelStyle = {
+    width: "100%", maxWidth: wide ? 880 : 420, display: "flex", flexDirection: "column",
+    padding: "0 20px", paddingTop: wide ? 0 : "env(safe-area-inset-top)",
+    ...(wide && { maxHeight: "calc(100dvh - 32px)" }),
+  };
+  const menuBodyFit = wide ? { flex: "0 1 auto", minHeight: 0, overflowY: "auto" } : {};
+
   const gameRef = useRef(game);
   gameRef.current = game;
   const containerRef = useRef(null);
@@ -929,13 +947,13 @@ export default function App() {
     const cfg = settings;
     const upd = patch => { const n = { ...cfg, ...patch }; setSettings(n); store.saveSettings(n); sync.pushSoon(); };
     return (
-      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
+      <div className="vh" style={menuStageStyle}>
+        <div style={menuPanelStyle}>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 0", flexShrink: 0 }}>
             <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Back</button>
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Table setup</div>
           </div>
-          <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
+          <div style={{ flex: 1, ...menuBodyFit, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
             {accountsEnabled && authUser && (
               <div style={{ gridColumn: wide ? "1 / -1" : undefined }}>
                 <SetupLabel>Chips</SetupLabel>
@@ -994,7 +1012,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
+          <div style={{ flexShrink: 0, paddingTop: wide ? 12 : 0, paddingBottom: wide ? 20 : "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
             {walletErr && (
               <div style={{ fontSize: 13, color: C.red, fontWeight: 600, textAlign: "center", marginBottom: 10 }}>{walletErr}</div>
             )}
@@ -1011,13 +1029,13 @@ export default function App() {
 
   if (screen === "online") {
     return (
-      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
+      <div className="vh" style={menuStageStyle}>
+        <div style={menuPanelStyle}>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 0", flexShrink: 0 }}>
             <button onClick={() => setScreen("home")} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Back</button>
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Play online</div>
           </div>
-          <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
+          <div style={{ flex: 1, ...menuBodyFit, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 22, paddingTop: 12 }}>
             {accountsEnabled && authUser && accProfile ? (
               <div style={{ gridColumn: "1 / -1" }}>
                 <SetupLabel>Playing as</SetupLabel>
@@ -1123,14 +1141,14 @@ export default function App() {
       catch { setNetErr(`Copy failed — share the code ${room.code}`); }
     };
     return (
-      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
+      <div className="vh" style={menuStageStyle}>
+        <div style={menuPanelStyle}>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 0", flexShrink: 0 }}>
             <button onClick={leaveTable} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Leave</button>
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink }}>{room.config.bankroll ? "Saved-chips table" : "Private table"}</div>
             <span className="conn-dot" style={{ background: conn === "on" ? C.green : C.gold, marginLeft: 30 }} />
           </div>
-          <div style={{ flex: 1, overflowY: "auto", display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 18, paddingTop: 8 }}>
+          <div style={{ flex: 1, overflowY: "auto", ...menuBodyFit, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 18, paddingTop: 8 }}>
             {room.config.bankroll && (
               <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", background: `${C.gold}14`, border: `1.5px solid ${C.gold}`, borderRadius: 14 }}>
                 <span style={{ fontSize: 17 }}>🪙</span>
@@ -1220,7 +1238,7 @@ export default function App() {
             )}
             {netErr && <div style={{ gridColumn: "1 / -1", color: C.red, fontSize: 13, fontWeight: 600, textAlign: "center" }}>{netErr}</div>}
           </div>
-          <div style={{ display: "flex", gap: 8, padding: "12px 0", paddingBottom: "calc(28px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 480 : "none", margin: wide ? "0 auto" : undefined }}>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, padding: "12px 0", paddingBottom: wide ? 20 : "calc(28px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 480 : "none", margin: wide ? "0 auto" : undefined }}>
             <Btn onClick={() => { netRef.current?.send({ type: "ready", ready: !me?.ready }); }}>{me?.ready ? "Not ready" : "I'm ready"}</Btn>
             {isHost && <Btn kind="accent" disabled={!room.canStart} onClick={() => netRef.current?.send({ type: "start" })} style={{ flex: 2 }}>Start game</Btn>}
             {accountOverlays}
@@ -1232,13 +1250,13 @@ export default function App() {
 
   if (screen === "history") {
     return (
-      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
+      <div className="vh" style={menuStageStyle}>
+        <div style={menuPanelStyle}>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 0", flexShrink: 0 }}>
             <button onClick={() => setScreen(histFrom.current)} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Back</button>
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Hand history</div>
           </div>
-          <div style={{ flex: 1, overflowY: "auto", display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 10, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
+          <div style={{ flex: 1, overflowY: "auto", ...menuBodyFit, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 10, paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}>
             {history.length === 0 && (
               <div style={{ gridColumn: "1 / -1", textAlign: "center", color: C.muted, fontSize: 14, padding: "60px 20px", lineHeight: 1.6 }}>
                 No hands yet.<br />Finished hands land here — the last 25 are kept.
@@ -1299,13 +1317,13 @@ export default function App() {
     const lv = levelFromXp(xpFromStats(st));
     const unlocked = unlockedAchievements(st);
     return (
-      <div className="vh" style={{ background: C.bg, fontFamily: FONT, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: "100%", maxWidth: wide ? 720 : 420, display: "flex", flexDirection: "column", padding: "0 20px", paddingTop: "env(safe-area-inset-top)" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "14px 0" }}>
+      <div className="vh" style={menuStageStyle}>
+        <div style={menuPanelStyle}>
+          <div style={{ display: "flex", alignItems: "center", padding: "14px 0", flexShrink: 0 }}>
             <button onClick={() => setScreen(from)} style={{ background: "none", border: "none", color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, padding: 0 }}>← Back</button>
             <div style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 800, color: C.ink, marginRight: 44 }}>Lifetime stats</div>
           </div>
-          <div style={{ flex: 1, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 10, paddingTop: 8 }}>
+          <div style={{ flex: 1, ...menuBodyFit, display: wide ? "grid" : "flex", gridTemplateColumns: wide ? "1fr 1fr" : "none", alignContent: "start", flexDirection: "column", gap: 10, paddingTop: 8 }}>
             <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: C.surface, borderRadius: 14, border: `1px solid ${C.line}` }}>
               <div style={{ width: 46, height: 46, borderRadius: 23, background: C.ink, color: C.onPrim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, flexShrink: 0 }}>{lv.level}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1345,7 +1363,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div style={{ paddingBottom: "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
+          <div style={{ flexShrink: 0, paddingTop: wide ? 12 : 0, paddingBottom: wide ? 20 : "calc(32px + env(safe-area-inset-bottom))", width: "100%", maxWidth: wide ? 440 : "none", margin: wide ? "0 auto" : undefined }}>
             <Btn kind="danger" onClick={() => { store.resetStats(); sync.pushSoon(); setScreen("home"); setTimeout(() => setScreen("stats"), 0); }} style={{ width: "100%" }}>Reset stats</Btn>
           </div>
         </div>
