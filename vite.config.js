@@ -30,9 +30,9 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: "Kicker — Mobile Poker",
+        name: "Kicker — Multiplayer Poker",
         short_name: "Kicker",
-        description: "Clean Texas Hold'em against four AI players. Live win odds on every street.",
+        description: "Clean Texas Hold'em vs friends, or AI players. Live win odds on every street.",
         theme_color: "#EDEFF2",
         background_color: "#EDEFF2",
         display: "standalone",
