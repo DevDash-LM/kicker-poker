@@ -877,7 +877,7 @@ export default function App() {
             </div>
             <h1 className="rise-in" style={{ fontSize: "clamp(34px, 10vw, 42px)", fontWeight: 800, letterSpacing: "-0.04em", color: C.ink, margin: 0 }}>Kicker</h1>
             <p className="rise-in" style={{ color: C.muted, fontSize: 16, lineHeight: 1.5, margin: 0, maxWidth: 300, animationDelay: ".08s" }}>
-              Clean Texas Hold'em against AI players. Live win odds on every street — learn as you play.
+              Clean Texas Hold'em vs friends, or AI players. Live win odds on every street — learn as you play.
             </p>
           </div>
           <div className="rise-in" style={{ width: wide ? 360 : "auto", flexShrink: 0, paddingBottom: wide ? 0 : "calc(env(safe-area-inset-bottom) + 18px)", display: "flex", flexDirection: "column", gap: 10, animationDelay: ".16s" }}>

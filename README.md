@@ -1,4 +1,4 @@
-# Kicker — Mobile Poker
+# Kicker — Multiplayer Poker
 
 Clean Texas Hold'em vs friends, or AI players. Live win odds on every street. Installable PWA.
 
