@@ -124,6 +124,19 @@ export async function deleteAccount() {
 
 // ---- profile --------------------------------------------------------------
 
+// Attach a `verified` boolean to each profile in the list, in one query.
+// verified_users is readable by any signed-in user (it's just badge state), so
+// a single `.in()` lookup tells us which of these ids carry the badge.
+async function attachVerified(profiles) {
+  if (!sb || !profiles || profiles.length === 0) return profiles || [];
+  const ids = profiles.map(p => p.id).filter(Boolean);
+  if (ids.length === 0) return profiles;
+  const { data } = await sb.from("verified_users").select("user_id").in("user_id", ids);
+  const set = new Set((data || []).map(r => r.user_id));
+  for (const p of profiles) p.verified = set.has(p.id);
+  return profiles;
+}
+
 // Load (and self-heal) the signed-in user's profile.
 export async function loadProfile() {
   if (!sb) return null;
@@ -138,7 +151,56 @@ export async function loadProfile() {
     if (ins.error) throw ins.error;
     data = ins.data;
   }
+  const { data: v } = await sb.from("verified_users").select("user_id").eq("user_id", user.id).maybeSingle();
+  data.verified = !!v;
   return data;
+}
+
+// ---- verified badge (admin-gated) -----------------------------------------
+
+// Is the signed-in user an admin (may grant/revoke the verified badge)? Reads
+// their own admin row; RLS lets them see only that, which is all we need.
+export async function isAdmin() {
+  if (!sb) return false;
+  const user = await getUser();
+  if (!user) return false;
+  const { data } = await sb.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
+  return !!data;
+}
+
+// Admin: grant/revoke the badge by friend code. Returns the RPC status string
+// ('verified' | 'unverified' | 'not_found' | 'forbidden' | 'unauthorized').
+export async function verifyByCode(code, value = true) {
+  if (!sb) throw new Error("accounts disabled");
+  const { data, error } = await sb.rpc("set_verified_by_code", { code, value });
+  if (error) throw error;
+  return data;
+}
+
+// Admin: grant/revoke the badge by user id (used by the "verified players" list).
+export async function setVerified(userId, value = true) {
+  if (!sb) throw new Error("accounts disabled");
+  const { data, error } = await sb.rpc("set_verified", { target: userId, value });
+  if (error) throw error;
+  return data;
+}
+
+// Admin: list everyone currently verified, with their profile. Relies on the
+// admin bypass in the profiles read policy to resolve names/emoji.
+export async function listVerified() {
+  if (!sb) return [];
+  const { data: vs, error } = await sb
+    .from("verified_users").select("user_id, verified_at");
+  if (error) throw error;
+  if (!vs || vs.length === 0) return [];
+  const ids = vs.map(v => v.user_id);
+  const { data: profiles } = await sb
+    .from("profiles").select("id, display_name, emoji, friend_code").in("id", ids);
+  const byId = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+  return vs
+    .map(v => ({ ...(byId[v.user_id] || {}), id: v.user_id, verified_at: v.verified_at }))
+    .filter(x => x.display_name)
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
 }
 
 // Update only your own name / emoji. RLS + triggers block editing anyone else
@@ -180,6 +242,7 @@ export async function listFriends() {
     .select("id, display_name, emoji, friend_code")
     .in("id", otherIds);
   if (e2) throw e2;
+  await attachVerified(profiles);
   return profiles.sort((a, b) => a.display_name.localeCompare(b.display_name));
 }
 
@@ -199,6 +262,7 @@ export async function listRequests() {
   if (ids.length) {
     const { data: profiles } = await sb
       .from("profiles").select("id, display_name, emoji, friend_code").in("id", ids);
+    await attachVerified(profiles);
     byId = Object.fromEntries((profiles || []).map(p => [p.id, p]));
   }
   const incoming = [], outgoing = [];
@@ -266,6 +330,7 @@ export async function listInvites() {
   if (ids.length) {
     const { data: profiles } = await sb
       .from("profiles").select("id, display_name, emoji").in("id", ids);
+    await attachVerified(profiles);
     byId = Object.fromEntries((profiles || []).map(p => [p.id, p]));
   }
   return rows.map(r => ({ id: r.id, roomCode: r.room_code, from: byId[r.from_user] || null }));

@@ -51,13 +51,11 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
--- Anyone signed in can read profiles (needed to show a friend's name/emoji).
--- Only names, emoji and friend codes live here — nothing sensitive.
-drop policy if exists "profiles readable by authenticated" on public.profiles;
-create policy "profiles readable by authenticated"
-  on public.profiles for select
-  to authenticated
-  using (true);
+-- The profiles SELECT policy is intentionally created LATER in this file (see
+-- the "profiles read policy" section after room_invites / admins), because it
+-- references those tables and they don't exist yet at this point. It restricts
+-- reads to yourself + people you already have a relationship with (+ admins),
+-- so friend_code can no longer be harvested table-wide.
 
 -- A user may create only their own profile row.
 drop policy if exists "insert own profile" on public.profiles;
@@ -222,6 +220,133 @@ create policy "delete own invite"
   on public.room_invites for delete
   to authenticated
   using (auth.uid() = from_user or auth.uid() = to_user);
+
+-- ---------------------------------------------------------------------------
+-- admins — who may grant/revoke the verified badge. Deliberately has NO
+-- insert/update/delete policies: admins are added or removed only from the SQL
+-- editor / a service-role connection, never through the app (so a compromised
+-- browser can never make itself an admin). A user may read only their OWN admin
+-- row — enough for the app to decide whether to show the admin tools.
+-- ---------------------------------------------------------------------------
+create table if not exists public.admins (
+  user_id  uuid primary key references public.profiles (id) on delete cascade,
+  added_at timestamptz not null default now()
+);
+alter table public.admins enable row level security;
+
+drop policy if exists "read own admin row" on public.admins;
+create policy "read own admin row"
+  on public.admins for select
+  to authenticated
+  using (user_id = auth.uid());
+
+-- Seed the first admin from the SQL editor, e.g.:
+--   insert into public.admins (user_id)
+--   select id from auth.users where email = 'you@example.com'
+--   on conflict do nothing;
+
+-- ---------------------------------------------------------------------------
+-- verified_users — the verified badge. One row per verified account, written
+-- ONLY by set_verified() below (which is admin-gated). Same trust model as
+-- wallets/cosmetics: there are no insert/update/delete policies, so no browser
+-- can ever mark itself (or anyone) verified. Read is open to any signed-in user
+-- because a badge is meant to be seen; the row exposes nothing but "this id is
+-- verified".
+-- ---------------------------------------------------------------------------
+create table if not exists public.verified_users (
+  user_id     uuid primary key references public.profiles (id) on delete cascade,
+  verified_by uuid references public.profiles (id) on delete set null,
+  verified_at timestamptz not null default now()
+);
+alter table public.verified_users enable row level security;
+
+drop policy if exists "verified badges readable" on public.verified_users;
+create policy "verified badges readable"
+  on public.verified_users for select
+  to authenticated
+  using (true);
+
+-- ---------------------------------------------------------------------------
+-- profiles read policy — defined here (not up in the profiles section) because
+-- it references friendships / friend_requests / room_invites / admins, which
+-- are only created above. A signed-in user may read: their OWN profile, the
+-- profiles of people they already have a relationship with (accepted friend, a
+-- pending request either way, or a room invite either way), and — if they are
+-- an admin — everyone (so the admin tools can list/look up who to verify).
+-- Resolving a friend_code to a stranger is done server-side in
+-- add_friend_by_code() (SECURITY DEFINER), so the client never needs a blanket
+-- read of the table. This is what stops friend_code harvesting.
+-- ---------------------------------------------------------------------------
+drop policy if exists "profiles readable by authenticated" on public.profiles;
+drop policy if exists "profiles readable to self and connections" on public.profiles;
+create policy "profiles readable to self and connections"
+  on public.profiles for select
+  to authenticated
+  using (
+    id = auth.uid()
+    or exists (select 1 from public.friendships f
+               where (f.user_low = auth.uid() and f.user_high = profiles.id)
+                  or (f.user_high = auth.uid() and f.user_low = profiles.id))
+    or exists (select 1 from public.friend_requests r
+               where (r.from_user = auth.uid() and r.to_user = profiles.id)
+                  or (r.to_user = auth.uid() and r.from_user = profiles.id))
+    or exists (select 1 from public.room_invites i
+               where (i.from_user = auth.uid() and i.to_user = profiles.id)
+                  or (i.to_user = auth.uid() and i.from_user = profiles.id))
+    or exists (select 1 from public.admins a where a.user_id = auth.uid())
+  );
+
+-- ---------------------------------------------------------------------------
+-- set_verified(target, value): ADMIN ONLY. Grant (value=true) or revoke
+-- (value=false) the verified badge for a user id. Re-checks admin membership
+-- internally, so granting the badge can only ever come from an admin.
+-- ---------------------------------------------------------------------------
+create or replace function public.set_verified(target uuid, value boolean default true)
+returns text
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then return 'unauthorized'; end if;
+  if not exists (select 1 from public.admins where user_id = me) then return 'forbidden'; end if;
+  if not exists (select 1 from public.profiles where id = target) then return 'not_found'; end if;
+  if coalesce(value, true) then
+    insert into public.verified_users (user_id, verified_by)
+    values (target, me)
+    on conflict (user_id) do nothing;
+    return 'verified';
+  else
+    delete from public.verified_users where user_id = target;
+    return 'unverified';
+  end if;
+end;
+$$;
+
+-- set_verified_by_code(code, value): same, but resolve the target by friend
+-- code so an admin can verify someone from their code without knowing the uuid.
+create or replace function public.set_verified_by_code(code text, value boolean default true)
+returns text
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  target uuid;
+begin
+  if me is null then return 'unauthorized'; end if;
+  if not exists (select 1 from public.admins where user_id = me) then return 'forbidden'; end if;
+  select id into target from public.profiles where friend_code = upper(trim(code));
+  if target is null then return 'not_found'; end if;
+  return public.set_verified(target, value);
+end;
+$$;
+
+revoke execute on function public.set_verified(uuid, boolean) from public, anon;
+revoke execute on function public.set_verified_by_code(text, boolean) from public, anon;
+grant execute on function public.set_verified(uuid, boolean) to authenticated;
+grant execute on function public.set_verified_by_code(text, boolean) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- accept_friend_request(id): only the recipient may accept. Creates the
