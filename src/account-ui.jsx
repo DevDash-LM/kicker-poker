@@ -10,6 +10,20 @@ import {
   passwordProblem, MIN_PASSWORD,
 } from "./account-util.js";
 
+// The verified badge. Shown next to a name wherever a profile carries
+// `verified: true`. Granted only by an admin (see account.js / set_verified).
+export function VerifiedBadge({ size = 15, title = "Verified" }) {
+  return (
+    <span title={title} aria-label={title} role="img"
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: size, height: size, borderRadius: "50%", background: C.accent,
+        color: "#fff", fontSize: Math.round(size * 0.68), fontWeight: 900,
+        lineHeight: 1, flex: "0 0 auto", marginLeft: 5, verticalAlign: "middle",
+      }}>✓</span>
+  );
+}
+
 // Small self-contained "add friend by code" button, used next to verified
 // players in the room lobby and in the recent-players list.
 export function AddFriendButton({ friendCode, compact }) {
@@ -383,6 +397,93 @@ export function SignInModal({ onClose, onSignedIn }) {
 }
 
 // --------------------------------------------------------------------------
+// Admin-only: grant/revoke the verified badge. Renders nothing for non-admins.
+// You verify someone by their friend code; the list below shows who's verified
+// and lets you remove the badge. All writes go through the admin-gated
+// set_verified RPCs — a non-admin calling them just gets "forbidden".
+// --------------------------------------------------------------------------
+export function AdminVerifyPanel() {
+  const [admin, setAdmin] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [list, setList] = useState([]);
+
+  const refresh = useCallback(async () => {
+    try { setList(await acct.listVerified()); } catch { /* keep current */ }
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      let ok = false;
+      try { ok = await acct.isAdmin(); } catch { ok = false; }
+      if (!live) return;
+      setAdmin(ok);
+      if (ok) refresh();
+    })();
+    return () => { live = false; };
+  }, [refresh]);
+
+  const verify = async () => {
+    if (!isValidFriendCode(code)) { setMsg({ ok: false, text: "That code doesn’t look right." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const status = await acct.verifyByCode(normalizeFriendCode(code), true);
+      if (status === "verified") { setMsg({ ok: true, text: "Verified ✓" }); setCode(""); refresh(); }
+      else if (status === "not_found") setMsg({ ok: false, text: "No player has that code." });
+      else if (status === "forbidden") setMsg({ ok: false, text: "You’re not an admin." });
+      else setMsg({ ok: false, text: "Couldn’t verify. Try again." });
+    } catch { setMsg({ ok: false, text: "Couldn’t verify. Try again." }); }
+    finally { setBusy(false); }
+  };
+
+  const unverify = async (userId) => {
+    setList(l => l.filter(u => u.id !== userId)); // optimistic
+    try { await acct.setVerified(userId, false); } catch { refresh(); }
+  };
+
+  if (!admin) return null;
+  return (
+    <div style={{ paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Label>Admin — verify players</Label><VerifiedBadge size={13} title="Admin" />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Field value={code} placeholder="Player’s friend code" autoCapitalize="characters" autoCorrect="off"
+          onChange={e => setCode(normalizeFriendCode(e.target.value))}
+          onKeyDown={e => e.key === "Enter" && verify()}
+          style={{ letterSpacing: ".14em", fontWeight: 700, flex: 1, minWidth: 0 }} />
+        <Btn kind="accent" onClick={verify} disabled={busy || !code} style={{ flex: "0 0 92px" }}>{busy ? "…" : "Verify"}</Btn>
+      </div>
+      {msg && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: msg.ok ? C.green : C.red }}>{msg.text}</div>}
+
+      {list.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+          {list.map(u => (
+            <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+              <span style={{ fontSize: 18 }}>{u.emoji || "🙂"}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: C.ink, display: "inline-flex", alignItems: "center" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.display_name}</span>
+                <VerifiedBadge size={13} />
+              </span>
+              <button className="btn" onClick={() => { S.tap(); unverify(u.id); }}
+                style={{ fontFamily: FONT, fontSize: 12, fontWeight: 800, padding: "6px 12px", borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface, color: C.red, cursor: "pointer", whiteSpace: "nowrap" }}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: C.faint, marginTop: 8, lineHeight: 1.5 }}>
+        Ask a player for their friend code, then verify them here. Only admins can
+        grant the badge; add more admins from the Supabase SQL editor.
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
 // Account screen: profile + friends + requests
 // --------------------------------------------------------------------------
 export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }) {
@@ -473,7 +574,10 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
         <div style={{ display: "flex", flexDirection: "column", gap: 22, paddingTop: 6, paddingBottom: "calc(28px + env(safe-area-inset-bottom))" }}>
           {/* Profile */}
           <div>
-            <Label>Your profile</Label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Label>Your profile</Label>
+              {profile?.verified && <div style={{ marginBottom: 8 }}><VerifiedBadge /></div>}
+            </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
               {AVATARS.map(e => (
                 <button key={e} className="btn" onClick={() => { S.tap(); setEmoji(e); }}
@@ -527,7 +631,10 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
                 {incoming.map(r => (
                   <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
                     <span style={{ fontSize: 20 }}>{r.profile?.emoji || "🙂"}</span>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{r.profile?.display_name || "Player"}</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink, display: "inline-flex", alignItems: "center", minWidth: 0 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.profile?.display_name || "Player"}</span>
+                      {r.profile?.verified && <VerifiedBadge />}
+                    </span>
                     <button className="btn" onClick={() => respond(r.id, true)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 12px", borderRadius: 10, border: "none", background: C.accent, color: "#fff", cursor: "pointer" }}>Accept</button>
                     <button className="btn" onClick={() => respond(r.id, false)} style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, padding: "7px 12px", borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, color: C.muted, cursor: "pointer" }}>Decline</button>
                   </div>
@@ -551,7 +658,10 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
                 {friends.map(f => (
                   <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
                     <span style={{ fontSize: 20 }}>{f.emoji}</span>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{f.display_name}</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink, display: "inline-flex", alignItems: "center", minWidth: 0 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.display_name}</span>
+                      {f.verified && <VerifiedBadge />}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -562,6 +672,9 @@ export function AccountScreen({ profile, onClose, onProfileChange, onSignedOut }
               </div>
             )}
           </div>
+
+          {/* Admin tools (only visible to admins) */}
+          <AdminVerifyPanel />
 
           <Btn kind="danger" onClick={signOut}>Sign out</Btn>
 
@@ -641,7 +754,10 @@ export function InviteFriends({ roomCode }) {
             return (
               <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
                 <span style={{ fontSize: 18 }}>{f.emoji}</span>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.display_name}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: C.ink, display: "inline-flex", alignItems: "center" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.display_name}</span>
+                  {f.verified && <VerifiedBadge size={13} />}
+                </span>
                 <button className="btn" onClick={() => { S.tap(); buzz(6); invite(f.id); }} disabled={!!st}
                   style={{ fontFamily: FONT, fontSize: 12, fontWeight: 800, padding: "6px 12px", borderRadius: 9, border: `1px solid ${st === "done" ? C.green : C.line}`, background: C.surface, color: st === "done" ? C.green : C.accent, cursor: st ? "default" : "pointer", whiteSpace: "nowrap" }}>
                   {st === "busy" ? "…" : st === "done" ? "Invited ✓" : "Invite"}
@@ -679,7 +795,10 @@ export function IncomingInvites({ onJoin }) {
           <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
             <span style={{ fontSize: 20 }}>{inv.from?.emoji || "🙂"}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.from?.display_name || "A friend"}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, display: "flex", alignItems: "center", minWidth: 0 }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.from?.display_name || "A friend"}</span>
+                {inv.from?.verified && <VerifiedBadge size={13} />}
+              </div>
               <div style={{ fontSize: 12, color: C.faint, letterSpacing: ".08em", fontVariantNumeric: "tabular-nums" }}>Table {inv.roomCode}</div>
             </div>
             <button className="btn" onClick={() => { S.tap(); buzz(6); onJoin?.(inv.roomCode); }}
