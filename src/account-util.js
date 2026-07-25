@@ -82,14 +82,14 @@ export function mergeRecentPlayers(existing, members, ts = Date.now()) {
   if (Array.isArray(existing)) {
     for (const p of existing) {
       if (p && p.friendCode) {
-        byCode.set(p.friendCode, { friendCode: p.friendCode, name: p.name, emoji: p.emoji, ts: p.ts ?? 0 });
+        byCode.set(p.friendCode, { friendCode: p.friendCode, name: p.name, emoji: p.emoji, verified: !!p.verified, ts: p.ts ?? 0 });
       }
     }
   }
   if (Array.isArray(members)) {
     for (const m of members) {
       if (m && m.friendCode && !m.you) {
-        byCode.set(m.friendCode, { friendCode: m.friendCode, name: m.name, emoji: m.emoji, ts });
+        byCode.set(m.friendCode, { friendCode: m.friendCode, name: m.name, emoji: m.emoji, verified: !!m.verified, ts });
       }
     }
   }

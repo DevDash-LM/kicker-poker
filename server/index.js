@@ -90,7 +90,8 @@ export function createServer(port = 8787, {
     members: liveMembers(room).map(m => ({
       name: m.name, emoji: m.emoji, ready: m.ready,
       host: m.id === room.host, connected: m.connected, you: m.id === forId,
-      account: !!m.accountId, // verified signed-in account (see server/auth.js)
+      account: !!m.accountId, // signed-in account (see server/auth.js)
+      verified: !!m.verified, // admin-granted verified badge
       // Shareable by design — lets tablemates add each other as friends.
       friendCode: m.friendCode || null,
     })),
@@ -252,7 +253,7 @@ export function createServer(port = 8787, {
       // Cash games rebuy busted players (practice-chip rooms only); tournaments
       // and bankroll rooms leave them out.
       if (!tournament && !room.config.bankroll && m.chips <= 0) { m.chips = room.config.stack; m.rebuys = (m.rebuys || 0) + 1; }
-      return mkPlayer(m.name, m.emoji, false, m.chips);
+      return { ...mkPlayer(m.name, m.emoji, false, m.chips), verified: !!m.verified };
     });
     let ais = [];
     if (room.config.fillAI) {
@@ -280,7 +281,7 @@ export function createServer(port = 8787, {
     const live = liveMembers(room);
     const humans = live.map((m, i) => {
       m.seat = i; m.chips = room.config.stack; m.rebuys = 0;
-      return mkPlayer(m.name, m.emoji, false, room.config.stack);
+      return { ...mkPlayer(m.name, m.emoji, false, room.config.stack), verified: !!m.verified };
     });
     let ais = [];
     if (room.config.fillAI) {
@@ -374,6 +375,7 @@ export function createServer(port = 8787, {
           name: sanitizeName(account?.name ?? m.profile?.name),
           emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
           accountId: account?.id || null,
+          verified: !!account?.verified,
           friendCode: account?.friendCode || null,
           bankrollSession, bankrollSettled: false,
           ready: true, connected: true, lastSeen: Date.now(), seat: 0, chips: config.stack, rebuys: 0, left: false,
@@ -416,6 +418,7 @@ export function createServer(port = 8787, {
           name: dedupeName(room, sanitizeName(account?.name ?? m.profile?.name)),
           emoji: sanitizeAvatar(account?.emoji ?? m.profile?.emoji),
           accountId: account?.id || null,
+          verified: !!account?.verified,
           friendCode: account?.friendCode || null,
           bankrollSession, bankrollSettled: false,
           ready: false, connected: true, lastSeen: Date.now(), seat: liveMembers(room).length, chips: room.config.stack, rebuys: 0, left: false,

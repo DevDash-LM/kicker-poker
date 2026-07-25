@@ -304,8 +304,8 @@ function finishFolds(s) {
   const pot = potOf(s) - uncalled;
   winner.chips += pot + uncalled;
   s.stage = "over";
-  const lines = [{ name: winner.name, amount: pot, label: null, hero: !winner.ai }];
-  if (uncalled > 0) lines.push({ name: winner.name, amount: uncalled, label: null, hero: !winner.ai, pot: "returned" });
+  const lines = [{ name: winner.name, amount: pot, label: null, hero: !winner.ai, verified: !!winner.verified }];
+  if (uncalled > 0) lines.push({ name: winner.name, amount: uncalled, label: null, hero: !winner.ai, verified: !!winner.verified, pot: "returned" });
   s.result = { lines };
   return s;
 }
@@ -337,6 +337,7 @@ function runShowdown(s) {
       s.players[i].chips += w;
       lines.push({
         name: s.players[i].name, amount: w, label: handLabel(scores[i]), hero: !s.players[i].ai,
+        verified: !!s.players[i].verified,
         pot: pots.length > 1 ? (pot.elig === 1 ? "returned" : pi === 0 ? "main pot" : "side pot") : null,
       });
     });

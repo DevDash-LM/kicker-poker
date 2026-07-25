@@ -5,7 +5,7 @@ import {
   AI_SEED, pickNames, decideAI, startHand, applyAction, stepRunout, runoutEquities, secureInt,
   aliveCount, tourneyOver,
 } from "./game/logic.js";
-import { CardFace, Seat, Btn, ChipDot, TimerBar, useCountUp } from "./components.jsx";
+import { CardFace, Seat, Btn, ChipDot, TimerBar, useCountUp, VerifiedBadge } from "./components.jsx";
 import { S, buzz, fx, setMuted, unlockAudio } from "./fx/fx.js";
 import * as store from "./storage.js";
 import { Net, loadProfile, saveProfile } from "./net.js";
@@ -455,7 +455,7 @@ export default function App() {
 
     const botNames = pickNames(cfg.ai);
     const players = [
-      { name: "You", emoji: "🙂", ai: false, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
+      { name: "You", emoji: "🙂", ai: false, chips: stack, verified: !!accProfile?.verified, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null },
       ...AI_SEED.slice(0, cfg.ai).map((a, i) => ({ ...a, name: botNames[i], ai: true, chips: stack, cards: [], bet: 0, total: 0, folded: false, allIn: false, acted: false, revealed: false, lastAction: null })),
     ];
     const base = {
@@ -848,6 +848,7 @@ export default function App() {
         <span className="acct-chip-name" style={{ fontSize: 14, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {authUser ? (accProfile?.display_name || "Account") : "Guest"}
         </span>
+        {authUser && accProfile?.verified && <VerifiedBadge size={14} />}
         <span className="acct-chip-chevron" style={{ fontSize: 13, color: C.muted, flexShrink: 0 }}>›</span>
       </button>
     );
@@ -1041,7 +1042,10 @@ export default function App() {
                 <SetupLabel>Playing as</SetupLabel>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
                   <span style={{ fontSize: 20 }}>{accProfile.emoji}</span>
-                  <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: C.ink }}>{accProfile.display_name}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: C.ink, display: "inline-flex", alignItems: "center" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{accProfile.display_name}</span>
+                    {accProfile.verified && <VerifiedBadge size={14} />}
+                  </span>
                   <span style={{ fontSize: 10, fontWeight: 800, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 7, padding: "2px 7px", letterSpacing: ".04em" }}>ACCOUNT</span>
                 </div>
                 <div style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>You'll appear at the table with your account name and avatar. Edit them in Account.</div>
@@ -1171,8 +1175,9 @@ export default function App() {
                   <span style={{ fontSize: 20 }}>{mm.emoji}</span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, flex: 1 }}>
                     {mm.name}{mm.you ? " (you)" : ""}
+                    {mm.verified && <VerifiedBadge size={14} />}
                     {mm.host && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, background: C.ink, color: C.onPrim, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>HOST</span>}
-                    {mm.account && <span title="Signed-in Kicker account" style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>✓</span>}
+                    {mm.account && !mm.verified && <span title="Signed-in Kicker account" style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 7, padding: "1px 6px", verticalAlign: "1px" }}>✓</span>}
                   </span>
                   {accountsEnabled && authUser && !mm.you && mm.friendCode && <AddFriendButton friendCode={mm.friendCode} compact />}
                   <span className="conn-dot" style={{ background: mm.connected ? C.green : C.gold }} />
@@ -1285,7 +1290,7 @@ export default function App() {
                   </div>
                   <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
                     {e.lines.filter(l => l.pot !== "returned").map((l, k) => (
-                      <span key={k}>{k > 0 && " · "}{l.name} won {fmt(l.amount)}{l.label ? ` (${l.label})` : ""}</span>
+                      <span key={k}>{k > 0 && " · "}{l.name}{l.verified && <VerifiedBadge size={12} />} won {fmt(l.amount)}{l.label ? ` (${l.label})` : ""}</span>
                     ))}
                   </div>
                   {open && e.actions?.length > 0 && (
@@ -1692,6 +1697,7 @@ export default function App() {
               {game.result.lines.map((l, i) => (
                 <div key={i} style={{ fontSize: 14, fontWeight: 600 }}>
                   <span style={{ color: l.hero ? "#7EF0B0" : "#fff" }}>{l.name}</span>
+                  {l.verified && <VerifiedBadge size={13} />}
                   {l.pot === "returned" ? " gets " : " wins "}
                   <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{fmt(l.amount)}</span>
                   {l.pot === "returned" ? (
