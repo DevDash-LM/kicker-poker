@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { C, FONT } from "./theme.js";
-import { Btn } from "./components.jsx";
+import { Btn, VerifiedBadge } from "./components.jsx";
 import { S, buzz } from "./fx/fx.js";
 import { AVATARS } from "../server/protocol.js";
 import * as acct from "./account.js";
@@ -10,19 +10,10 @@ import {
   passwordProblem, MIN_PASSWORD,
 } from "./account-util.js";
 
-// The verified badge. Shown next to a name wherever a profile carries
-// `verified: true`. Granted only by an admin (see account.js / set_verified).
-export function VerifiedBadge({ size = 15, title = "Verified" }) {
-  return (
-    <span title={title} aria-label={title} role="img"
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: size, height: size, borderRadius: "50%", background: C.accent,
-        color: "#fff", fontSize: Math.round(size * 0.68), fontWeight: 900,
-        lineHeight: 1, flex: "0 0 auto", marginLeft: 5, verticalAlign: "middle",
-      }}>✓</span>
-  );
-}
+// The verified badge now lives in components.jsx (a shared, dependency-light
+// module) so the game seats can render it too without a circular import.
+// Re-exported here so existing importers keep working.
+export { VerifiedBadge };
 
 // Small self-contained "add friend by code" button, used next to verified
 // players in the room lobby and in the recent-players list.
@@ -63,7 +54,10 @@ export function RecentPlayers({ players }) {
         {players.slice(0, 6).map(p => (
           <div key={p.friendCode} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14 }}>
             <span style={{ fontSize: 18 }}>{p.emoji}</span>
-            <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.ink }}>{p.name}</span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: C.ink, display: "inline-flex", alignItems: "center" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+              {p.verified && <VerifiedBadge size={13} />}
+            </span>
             <AddFriendButton friendCode={p.friendCode} compact />
           </div>
         ))}

@@ -28,6 +28,23 @@ import { RANK_STR, fmt } from "./game/logic.js";
 import { S, buzz } from "./fx/fx.js";
 import { EQUIPPED, cardBackDesign, chipDesign } from "./cosmetics.js";
 
+// The verified badge. Shown next to a name wherever a profile/player carries
+// `verified: true`. Granted only by an admin (see account.js / set_verified).
+// Lives here (a shared, dependency-light module) so every surface that shows a
+// username — the table seats, the home account chip, lobby, friends, invites —
+// can render the exact same badge without a circular import.
+export function VerifiedBadge({ size = 15, title = "Verified" }) {
+  return (
+    <span title={title} aria-label={title} role="img"
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: size, height: size, borderRadius: "50%", background: C.accent,
+        color: "#fff", fontSize: Math.round(size * 0.68), fontWeight: 900,
+        lineHeight: 1, flex: "0 0 auto", marginLeft: 5, verticalAlign: "middle",
+      }}>✓</span>
+  );
+}
+
 export function CardFace({ card, w = 44, h = 62, fs = 17, className = "", style }) {
   const m = SUIT_META[card.s];
   return (
@@ -122,7 +139,10 @@ export function Seat({ p, isTurn, isDealer, folded, dealKey, seatIdx, innerRef, 
         )}
       </div>
       {isTurn && deadline ? <TimerBar deadline={deadline} width={av} /> : null}
-      <div style={{ fontSize: nameFs, fontWeight: 700, color: dimmed ? C.faint : C.ink }}>{p.name}{dimmed ? " ⚡" : ""}</div>
+      <div style={{ fontSize: nameFs, fontWeight: 700, color: dimmed ? C.faint : C.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", maxWidth: "100%" }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}{dimmed ? " ⚡" : ""}</span>
+        {p.verified && <VerifiedBadge size={nameFs} />}
+      </div>
       <div style={{ fontSize: chipFs, color: C.muted, fontVariantNumeric: "tabular-nums", marginTop: -3 }}>{fmt(p.chips)}</div>
       <div style={{ height: big ? 24 : 18 }}>
         {p.sitOut ? (

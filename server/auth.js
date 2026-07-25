@@ -39,23 +39,29 @@ async function supaGet(path, token) {
   }
 }
 
-// Verify a Supabase access token. Resolves to { id, name, emoji, friendCode }
-// for a valid signed-in user (profile fields may be null if the row is
-// missing), or null for anything else. Never throws.
+// Verify a Supabase access token. Resolves to
+// { id, name, emoji, friendCode, verified } for a valid signed-in user (profile
+// fields may be null if the row is missing), or null for anything else. Never
+// throws.
 // friendCode is included so tablemates can add each other as friends straight
 // from the room — it's a shareable invite code by design, not a secret.
+// verified is the admin-granted badge (public.verified_users), readable by any
+// authenticated user, so it can be shown next to the player's name at the table.
 export async function verifyAccount(token) {
   if (!accountsConfigured) return null;
   if (typeof token !== "string" || token.length < 20 || token.length > 4096) return null;
   const user = await supaGet("/auth/v1/user", token);
   const id = user?.id;
   if (typeof id !== "string" || !id) return null;
-  // Read the profile with the user's own token — RLS allows any authenticated
-  // user to read profiles (names/emoji/friend codes, nothing sensitive).
-  const rows = await supaGet(
-    `/rest/v1/profiles?id=eq.${encodeURIComponent(id)}&select=display_name,emoji,friend_code`,
-    token
-  );
+  // Read the profile + badge with the user's own token — RLS allows any
+  // authenticated user to read profiles (names/emoji/friend codes, nothing
+  // sensitive) and the verified_users badge table.
+  const eid = encodeURIComponent(id);
+  const [rows, badge] = await Promise.all([
+    supaGet(`/rest/v1/profiles?id=eq.${eid}&select=display_name,emoji,friend_code`, token),
+    supaGet(`/rest/v1/verified_users?user_id=eq.${eid}&select=user_id`, token),
+  ]);
   const p = Array.isArray(rows) ? rows[0] : null;
-  return { id, name: p?.display_name ?? null, emoji: p?.emoji ?? null, friendCode: p?.friend_code ?? null };
+  const verified = Array.isArray(badge) && badge.length > 0;
+  return { id, name: p?.display_name ?? null, emoji: p?.emoji ?? null, friendCode: p?.friend_code ?? null, verified };
 }
