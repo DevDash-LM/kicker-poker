@@ -2,6 +2,8 @@
 
 Clean Texas Hold'em vs friends, or AI players. Live win odds on every street. Installable PWA.
 
+## Play it [HERE!](https://kicker.s4lo.lol/)
+
 **Cryptographically secure RNG (CSPRNG) with an unbiased Fisher–Yates shuffle, verified by automated tests.**
 
 The app is a PWA: solo play works fully offline after first load and it can be added to the home screen on iOS/Android. Multiplayer degrades gracefully — if the server is unreachable you get a clear error, never a broken table.
